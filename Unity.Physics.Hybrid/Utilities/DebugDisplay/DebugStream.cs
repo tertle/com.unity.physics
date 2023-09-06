@@ -96,7 +96,7 @@ namespace Unity.Physics.Authoring
             {
                 m_DrawComponent = new GameObject("DebugDisplay.DrawComponent", typeof(DrawComponent))
                 {
-                    hideFlags = HideFlags.DontSave
+                    hideFlags = HideFlags.HideAndDontSave
                 }.GetComponent<DrawComponent>();
             }
 #endif
