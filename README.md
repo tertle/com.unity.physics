@@ -2,7 +2,7 @@
 This fork provides performance optimizations, quick fixes, and improvements to the entities package. It will never add new features. Therefore, as long as you don't depend on some obscure behavior, you should always be able to switch between the official package and this fork without any issues.
 
 ## Changes
-
+- Uniform scale no longer bakes into colliders.
 
 # About Unity Physics
 The Unity Physics package provides a stateless, high-performance constrained rigid body simulation.

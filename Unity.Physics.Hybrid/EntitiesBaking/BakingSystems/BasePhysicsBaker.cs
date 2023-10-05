@@ -75,6 +75,19 @@ namespace Unity.Physics.Authoring
             return math.lengthsq((float3)bodyTransform.lossyScale - new float3(1f)) > 0f;
         }
 
+        bool HasNonUniformScale(Transform bodyTransform, out float uniformScale)
+        {
+            var s = (float3)bodyTransform.lossyScale;
+            if (math.abs(s.x - s.y) > .0001f || math.abs(s.x - s.z) > .0001f)
+            {
+                uniformScale = 1;
+                return true;
+            }
+
+            uniformScale = s.x;
+            return false;
+        }
+
         /// <summary>
         /// Post processing set up of this entity's transformation.
         /// </summary>
@@ -91,7 +104,7 @@ namespace Unity.Physics.Authoring
                 AddComponent(entity, new LocalToWorld { Value = bodyTransform.localToWorldMatrix });
 
 
-                if (HasNonIdentityScale(bodyTransform))
+                if (HasNonUniformScale(bodyTransform, out var uniformScale))
                 {
                     // Any non-identity scale at authoring time is baked into the physics collision shape/mass data.
                     // In this case, the LocalTransform scale field should be set to 1.0 to avoid double-scaling
@@ -101,7 +114,7 @@ namespace Unity.Physics.Authoring
                     var compositeScale = float4x4.Scale(bodyTransform.localScale);
                     AddComponent(entity, new PostTransformMatrix { Value = compositeScale });
                 }
-                var uniformScale = 1.0f;
+
                 LocalTransform transform = LocalTransform.FromPositionRotationScale(bodyTransform.localPosition,
                     bodyTransform.localRotation, uniformScale);
                 AddComponent(entity, transform);

@@ -238,7 +238,7 @@ namespace Unity.Physics.Authoring
                 Orientation = orientationFixup
             };
 
-            var linearScale = float4x4.TRS(float3.zero, math.inverse(orientationFixup), shape.transform.lossyScale).DecomposeScale();
+            var linearScale = GetScale(float4x4.TRS(float3.zero, math.inverse(orientationFixup), shape.transform.lossyScale));
             geometry.Size = math.abs(shape.size * linearScale);
 
             geometry.BevelRadius = math.min(ConvexHullGenerationParameters.Default.BevelRadius, math.cmin(geometry.Size) * 0.5f);
@@ -265,7 +265,7 @@ namespace Unity.Physics.Authoring
             var shapeFromWorld = math.inverse(new float4x4(rigidBodyTransform));
             var center = math.mul(shapeFromWorld, worldCenter).xyz;
 
-            var linearScale = float4x4.TRS(float3.zero, math.inverse(orientationFixup), shape.transform.lossyScale).DecomposeScale();
+            var linearScale = GetScale(float4x4.TRS(float3.zero, math.inverse(orientationFixup), shape.transform.lossyScale));
             var radius = shape.radius * math.cmax(math.abs(linearScale));
 
             res.SphereProperties = new SphereGeometry { Center = center, Radius = radius };
@@ -286,7 +286,7 @@ namespace Unity.Physics.Authoring
             var transformRotation   = shape.transform.rotation;
             var rigidBodyTransform  = Math.DecomposeRigidBodyTransform(shapeLocalToWorld);
             var orientationFixup    = math.inverse(math.mul(math.inverse(transformRotation), rigidBodyTransform.rot));
-            var linearScale         = float4x4.TRS(float3.zero, math.inverse(orientationFixup), shape.transform.lossyScale).DecomposeScale();
+            var linearScale         = GetScale(float4x4.TRS(float3.zero, math.inverse(orientationFixup), shape.transform.lossyScale));
 
             // radius is max of the two non-height axes
             var radius = shape.radius * math.cmax(new float3(math.abs(linearScale)) { [shape.direction] = 0f });
@@ -346,7 +346,10 @@ namespace Unity.Physics.Authoring
 
             var transform = shape.transform;
             var rigidBodyTransform = Math.DecomposeRigidBodyTransform(transform.localToWorldMatrix);
-            var bakeFromShape = math.mul(math.inverse(new float4x4(rigidBodyTransform)), transform.localToWorldMatrix);
+
+            var ltw = (float4x4)transform.localToWorldMatrix;
+            var scaledLtw = float4x4.TRS(ltw.c3.xyz, new quaternion(math.orthonormalize(new float3x3(ltw))), GetScale(ltw));
+            var bakeFromShape = math.mul(math.inverse(new float4x4(rigidBodyTransform)), scaledLtw);
 
             var meshBakingData = new PhysicsMeshAuthoringData()
             {

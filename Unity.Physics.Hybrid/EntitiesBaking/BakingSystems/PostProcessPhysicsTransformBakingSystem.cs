@@ -22,7 +22,7 @@ namespace Unity.Physics.Authoring
 
             var manager = state.EntityManager;
 
-            if (math.lengthsq((float3)physicsPostProcessData.LossyScale - new float3(1f)) > .0001f)
+            if (HasNonUniformScale((float3)physicsPostProcessData.LossyScale, out var uniformScale))
             {
                 // Any non-identity scale at authoring time is baked into the physics collision shape/mass data.
                 // In this case, the LocalTransform scale field should be set to 1.0 to avoid double-scaling
@@ -34,7 +34,6 @@ namespace Unity.Physics.Authoring
                 );
                 manager.SetComponentData(entity, new PostTransformMatrix { Value = compositeScale });
             }
-            var uniformScale = 1.0f;
             manager.SetComponentData(entity,
                 LocalTransform.FromPositionRotationScale(rigidBodyTransform.pos, rigidBodyTransform.rot, uniformScale));
         }
@@ -47,6 +46,18 @@ namespace Unity.Physics.Authoring
             {
                 PostProcessTransformComponents(entity, postProcessData.ValueRO, ref state);
             }
+        }
+
+        bool HasNonUniformScale(float3 lossyScale, out float uniformScale)
+        {
+            if (math.abs(lossyScale.x - lossyScale.y) > .0001f || math.abs(lossyScale.x - lossyScale.z) > .0001f)
+            {
+                uniformScale = 1;
+                return true;
+            }
+
+            uniformScale = lossyScale.x;
+            return false;
         }
     }
 }

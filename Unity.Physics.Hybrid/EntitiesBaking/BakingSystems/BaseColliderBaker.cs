@@ -79,5 +79,16 @@ namespace Unity.Physics.Authoring
         {
             return ColliderExtensions.FindTopmostStaticEnabledAncestor(gameObject, out topStatic);
         }
+
+        protected static float3 GetScale(float4x4 bakeToShape)
+        {
+            var scale = bakeToShape.DecomposeScale();
+            if (math.abs(scale.x - scale.y) < 0.0001f && math.abs(scale.x - scale.z) < 0.0001f)
+            {
+                return new float3(1);
+            }
+
+            return scale;
+        }
     }
 }
