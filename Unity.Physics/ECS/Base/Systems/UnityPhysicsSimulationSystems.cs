@@ -180,8 +180,9 @@ namespace Unity.Physics.Systems
                 stepComponent = PhysicsStep.Default;
             }
 
-            var bpw = state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>();
-            var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(bpw);
+            // var bpw = state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>();
+            // var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(bpw);
+            var buildPhysicsData = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
 
             bool multiThreaded = stepComponent.MultiThreaded > 0;
             SimulationStepInput stepInput = new SimulationStepInput()
@@ -284,6 +285,7 @@ namespace Unity.Physics.Systems
         {
             var simSingleton = SystemAPI.GetSingletonRW<SimulationSingleton>().ValueRW;
             var stepInputSingleton = SystemAPI.GetSingletonRW<StepInputSingleton>().ValueRO;
+            SystemAPI.GetSingletonRW<BuildPhysicsWorldData>();
 
             unsafe
             {

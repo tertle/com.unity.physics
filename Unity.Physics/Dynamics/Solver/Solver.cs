@@ -8,6 +8,8 @@ using static Unity.Physics.Math;
 
 namespace Unity.Physics
 {
+    using UnityEngine;
+
     /// <summary>   A static class that exposes Solver configuration structures. </summary>
     public static class Solver
     {
@@ -300,23 +302,22 @@ namespace Unity.Physics
             JobHandle handle = inputDeps;
 
             // early out if there are no work items to process
-            int numPhases = solverSchedulerInfo.NumActivePhases[0];
-            if (numPhases > 0)
-            {
+            // int numPhases = solverSchedulerInfo.NumActivePhases[0];
+            // Debug.Log($"numPhases {numPhases}");
+            // if (numPhases > 0)
+            // {
                 // Use persistent allocator to allow these to live until the start of next step
                 {
+                    var numPhases = 16;
+
                     NativeArray<int> workItemList = solverSchedulerInfo.NumWorkItems;
 
                     //TODO: Change this to Allocator.TempJob when https://github.com/Unity-Technologies/Unity.Physics/issues/7 is resolved
-                    JobHandle collisionEventStreamHandle = NativeStream.ScheduleConstruct(out collisionEvents,
-                        workItemList, inputDeps, Allocator.Persistent);
-                    JobHandle triggerEventStreamHandle = NativeStream.ScheduleConstruct(out triggerEvents, workItemList,
-                        inputDeps, Allocator.Persistent);
-                    JobHandle impulseEventStreamHandle = NativeStream.ScheduleConstruct(out impulseEvents, workItemList,
-                        inputDeps, Allocator.Persistent);
+                    JobHandle collisionEventStreamHandle = NativeStream.ScheduleConstruct(out collisionEvents, workItemList, inputDeps, Allocator.Persistent);
+                    JobHandle triggerEventStreamHandle = NativeStream.ScheduleConstruct(out triggerEvents, workItemList, inputDeps, Allocator.Persistent);
+                    JobHandle impulseEventStreamHandle = NativeStream.ScheduleConstruct(out impulseEvents, workItemList, inputDeps, Allocator.Persistent);
 
-                    handle = JobHandle.CombineDependencies(collisionEventStreamHandle, triggerEventStreamHandle,
-                        impulseEventStreamHandle);
+                    handle = JobHandle.CombineDependencies(collisionEventStreamHandle, triggerEventStreamHandle, impulseEventStreamHandle);
 
                     float invNumIterations = math.rcp(numIterations);
 
@@ -338,6 +339,7 @@ namespace Unity.Physics
                         {
                             var job = new ParallelSolverJob
                             {
+                                NumActivePhases = solverSchedulerInfo.NumActivePhases,
                                 JacobiansReader = jacobians.AsReader(),
                                 PhaseIndex = phaseId,
                                 Phases = solverSchedulerInfo.PhaseInfo,
@@ -349,8 +351,8 @@ namespace Unity.Physics
                                     IsFirstIteration = firstIteration,
                                     IsLastIteration = lastIteration,
                                     Timestep = timestep,
-                                    InvTimestep = timestep > 0.0f ? 1.0f / timestep : 0.0f
-                                }
+                                    InvTimestep = timestep > 0.0f ? 1.0f / timestep : 0.0f,
+                                },
                             };
 
                             // Only initialize event writers for last solver iteration jobs
@@ -361,12 +363,15 @@ namespace Unity.Physics
                                 job.ImpulseEventsWriter = impulseEvents.AsWriter();
                             }
 
-                            var info = phaseInfoPtrs[phaseId];
+                            // var info = phaseInfoPtrs[phaseId];
                             // Note: If we have duplicate body indices across batches in this phase we need to process the phase
                             // sequentially to prevent data races. In this case, we choose a large batch size (batch equal to number of work items)
                             // to prevent any parallelization of the work.
-                            int batchSize = info.ContainsDuplicateIndices ? info.NumWorkItems : 1;
-                            handle = job.Schedule(info.NumWorkItems, batchSize, handle);
+                            // int batchSize = info.ContainsDuplicateIndices ? info.NumWorkItems : 1;
+
+                            var numWorkItems = phaseInfoPtrs + phaseId;
+
+                            handle = job.Schedule(&numWorkItems->NumWorkItems, 1, handle);
                         }
 
                         // Stabilize velocities
@@ -385,7 +390,7 @@ namespace Unity.Physics
                         }
                     }
                 }
-            }
+            // }
 
             // Dispose processed data
             returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(
@@ -490,8 +495,11 @@ namespace Unity.Physics
 
         [BurstCompile]
         [NoAlias]
-        private struct ParallelSolverJob : IJobParallelFor
+        private struct ParallelSolverJob : IJobParallelForDefer
         {
+            [ReadOnly]
+            public NativeArray<int> NumActivePhases;
+
             [NativeDisableParallelForRestriction]
             public NativeArray<MotionVelocity> MotionVelocities;
 
@@ -522,14 +530,35 @@ namespace Unity.Physics
 
             public void Execute(int workItemIndex)
             {
+                if (PhaseIndex >= this.NumActivePhases[0])
+                {
+                    return;
+                }
+
+                var info = Phases[this.PhaseIndex];
+                var end = workItemIndex + 1;
+
+                if (info.ContainsDuplicateIndices)
+                {
+                    if (workItemIndex != 0)
+                    {
+                        return;
+                    }
+
+                    end = info.NumWorkItems;
+                }
+
                 int workItemStartIndexOffset = Phases[PhaseIndex].FirstWorkItemIndex;
 
-                CollisionEventsWriter.PatchMinMaxRange(workItemIndex + workItemStartIndexOffset);
-                TriggerEventsWriter.PatchMinMaxRange(workItemIndex + workItemStartIndexOffset);
-                ImpulseEventsWriter.PatchMinMaxRange(workItemIndex + workItemStartIndexOffset);
+                for (; workItemIndex < end; workItemIndex++)
+                {
+                    CollisionEventsWriter.PatchMinMaxRange(workItemIndex + workItemStartIndexOffset);
+                    TriggerEventsWriter.PatchMinMaxRange(workItemIndex + workItemStartIndexOffset);
+                    ImpulseEventsWriter.PatchMinMaxRange(workItemIndex + workItemStartIndexOffset);
 
-                Solve(MotionVelocities, ref JacobiansReader, ref CollisionEventsWriter, ref TriggerEventsWriter, ref ImpulseEventsWriter,
-                    workItemIndex + workItemStartIndexOffset, StepInput, SolverStabilizationData);
+                    Solve(MotionVelocities, ref JacobiansReader, ref CollisionEventsWriter, ref TriggerEventsWriter, ref ImpulseEventsWriter,
+                        workItemIndex + workItemStartIndexOffset, StepInput, SolverStabilizationData);
+                }
             }
         }
 

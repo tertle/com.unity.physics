@@ -40,16 +40,13 @@ namespace Unity.Physics.Systems
         public void OnUpdate(ref SystemState state)
         {
             // Register a ReadOnly deps on PhysicsWorldSingleton
-            SystemAPI.GetSingleton<PhysicsWorldSingleton>();
-
-            var bpw = state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>();
+            ref var buildPhysicsData = ref SystemAPI.GetSingletonRW<BuildPhysicsWorldData>().ValueRW;
 
             JobHandle handle = state.Dependency;
 
 #if (UNITY_EDITOR || DEVELOPMENT_BUILD) && !UNITY_PHYSICS_DISABLE_INTEGRITY_CHECKS
-            handle = CheckIntegrity(ref state, handle, bpw);
+            handle = CheckIntegrity(ref state, handle);
 #endif
-            var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(bpw);
             handle = PhysicsWorldExporter.SchedulePhysicsWorldExport(ref state, ref m_ComponentTypeHandles, buildPhysicsData.PhysicsData.PhysicsWorld, handle, buildPhysicsData.PhysicsData.DynamicEntityGroup);
 
             // Combine implicit output dependency with user one
@@ -81,7 +78,7 @@ namespace Unity.Physics.Systems
             }
         }
 
-        internal JobHandle CheckIntegrity(ref SystemState state, JobHandle inputDeps, SystemHandle buildPhysicsWorld)
+        internal JobHandle CheckIntegrity(ref SystemState state, JobHandle inputDeps)
         {
             m_IntegrityCheckHandles.Update(ref state);
 
@@ -89,7 +86,7 @@ namespace Unity.Physics.Systems
             var physicsColliderType = m_IntegrityCheckHandles.PhysicsColliderType;
             var physicsVelocityType = m_IntegrityCheckHandles.PhysicsVelocityType;
 
-            var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(buildPhysicsWorld);
+            var buildPhysicsData = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
 
             var checkDynamicBodyIntegrity = new CheckDynamicBodyIntegrity
             {

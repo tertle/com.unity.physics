@@ -10,6 +10,8 @@ using UnityEngine.Assertions;
 
 namespace Unity.Physics.Systems
 {
+    using Unity.Profiling;
+
     // Make sure that:
     // 1. BuildPhysicsWorldDependencyResolver is always updated just before BuildPhysicsWorld
     // 2. BuildPhysicsWorld is the last system to be updated in [PhysicsInitializeGroup]
@@ -35,7 +37,7 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            ref var buildPhysicsData = ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>()).ValueRW;
+            ref var buildPhysicsData = ref SystemAPI.GetSingletonRW<BuildPhysicsWorldData>().ValueRW;
             buildPhysicsData.AddInputDependencyToComplete(state.Dependency);
         }
     }
@@ -148,8 +150,7 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            ref var buildPhysicsData = ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.SystemHandle).ValueRW;
-            buildPhysicsData.m_InputDependencyToComplete.Complete();
+            ref var buildPhysicsData = ref SystemAPI.GetSingletonRW<BuildPhysicsWorldData>().ValueRW;
 
             float timeStep = SystemAPI.Time.DeltaTime;
 
@@ -158,29 +159,31 @@ namespace Unity.Physics.Systems
                 stepComponent = PhysicsStep.Default;
             }
 
+            state.Dependency = JobHandle.CombineDependencies(buildPhysicsData.m_InputDependencyToComplete, state.Dependency);
+
             state.Dependency = PhysicsWorldBuilder.SchedulePhysicsWorldBuild(ref state, ref buildPhysicsData.PhysicsData, state.Dependency,
                 timeStep, stepComponent.MultiThreaded > 0, stepComponent.Gravity, state.LastSystemVersion);
 
 #if UNITY_EDITOR && ENABLE_CLOUD_SERVICES_ANALYTICS
 
             // Store simulation type
-            var analyticsData = SystemAPI.GetSingletonRW<PhysicsAnalyticsSingleton>();
-            analyticsData.ValueRW.m_SimulationType = stepComponent.SimulationType;
-
-            // This is an overkill to what we are trying to do at the moment (get max number of bodies in a scene).
-            // But all other jobs which do analytics should be created using this pattern, either as part of this job,
-            // or running in parallel with it.
-            state.Dependency = new AnalyticsJobs.PhysicsJointsAnalyticsJob
-            {
-                Joints = buildPhysicsData.PhysicsData.PhysicsWorld.Joints,
-                PhysicsAnalyticsSingleton = analyticsData
-            }.Schedule(state.Dependency);
-
-            state.Dependency = new AnalyticsJobs.PhysicsBodiesAnalyticsJob
-            {
-                World = buildPhysicsData.PhysicsData.PhysicsWorld,
-                PhysicsAnalyticsSingleton = analyticsData
-            }.Schedule(state.Dependency);
+            // var analyticsData = SystemAPI.GetSingletonRW<PhysicsAnalyticsSingleton>();
+            // analyticsData.ValueRW.m_SimulationType = stepComponent.SimulationType;
+            //
+            // // This is an overkill to what we are trying to do at the moment (get max number of bodies in a scene).
+            // // But all other jobs which do analytics should be created using this pattern, either as part of this job,
+            // // or running in parallel with it.
+            // state.Dependency = new AnalyticsJobs.PhysicsJointsAnalyticsJob
+            // {
+            //     Joints = buildPhysicsData.PhysicsData.PhysicsWorld.Joints,
+            //     PhysicsAnalyticsSingleton = analyticsData
+            // }.Schedule(state.Dependency);
+            //
+            // state.Dependency = new AnalyticsJobs.PhysicsBodiesAnalyticsJob
+            // {
+            //     World = buildPhysicsData.PhysicsData.PhysicsWorld,
+            //     PhysicsAnalyticsSingleton = analyticsData
+            // }.Schedule(state.Dependency);
 #endif
 
             SystemAPI.SetSingleton(new PhysicsWorldSingleton

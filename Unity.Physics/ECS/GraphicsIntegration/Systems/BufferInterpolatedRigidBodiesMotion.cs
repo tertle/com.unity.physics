@@ -65,7 +65,9 @@ namespace Unity.Physics.GraphicsIntegration
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            var bpwd = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>());
+            // var bpwd = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>());
+            var bpwd = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
+
             InterpolatedDynamicBodiesQuery.SetSharedComponentFilter(bpwd.WorldFilter);
             m_LocalTransformType.Update(ref state);
             m_PhysicsVelocityType.Update(ref state);

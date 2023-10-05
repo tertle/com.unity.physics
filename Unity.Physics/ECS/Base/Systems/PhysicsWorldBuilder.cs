@@ -62,7 +62,7 @@ namespace Unity.Physics.Systems
         /// <returns>   A JobHandle. </returns>
         public static JobHandle SchedulePhysicsWorldBuild(ref SystemState systemState,
             ref PhysicsWorld world, ref NativeReference<int> haveStaticBodiesChanged, in PhysicsWorldData.PhysicsWorldComponentHandles componentHandles,
-            in JobHandle inputDep, float timeStep, bool isBroadphaseBuildMultiThreaded, float3 gravity, uint lastSystemVersion,
+            JobHandle inputDep, float timeStep, bool isBroadphaseBuildMultiThreaded, float3 gravity, uint lastSystemVersion,
             EntityQuery dynamicEntityGroup, EntityQuery staticEntityQuery, EntityQuery jointEntityGroup)
         {
             JobHandle finalHandle = inputDep;
@@ -81,20 +81,28 @@ namespace Unity.Physics.Systems
                 return finalHandle;
             }
 
-            // Resize the world's native arrays
-            world.Reset(
-                numStaticBodies + 1, // +1 for the default static body
-                numDynamicBodies,
-                numJoints);
+            if (world.NumStaticBodies != numStaticBodies + 1 || world.NumDynamicBodies != numDynamicBodies)
+            {
+                // Resize the world's native arrays
+                world.Reset(
+                    numStaticBodies + 1, // +1 for the default static body
+                    numDynamicBodies,
+                    numJoints);
+            }
+            else
+            {
+                inputDep = new ClearBodyIndexMapJob { EntityBodyIndexMap = world.CollisionWorld.EntityBodyIndexMap }.Schedule(inputDep);
+            }
 
             // Determine if the static bodies have changed in any way that will require the static broadphase tree to be rebuilt
             JobHandle staticBodiesCheckHandle = default;
 
-            haveStaticBodiesChanged.Value = 0;
+            inputDep = new SetChangedJob { haveStaticBodiesChanged = haveStaticBodiesChanged, Value = 0 }.Schedule(inputDep);
+
             {
                 if (world.NumStaticBodies != previousStaticBodyCount)
                 {
-                    haveStaticBodiesChanged.Value = 1;
+                    staticBodiesCheckHandle = new SetChangedJob { haveStaticBodiesChanged = haveStaticBodiesChanged, Value = 1 }.Schedule(inputDep);
                 }
                 else
                 {
@@ -437,6 +445,29 @@ namespace Unity.Physics.Systems
         }
 
         #region Jobs
+
+        [BurstCompile]
+        private struct ClearBodyIndexMapJob : IJob
+        {
+            public NativeParallelHashMap<Entity, int> EntityBodyIndexMap;
+
+            public void Execute()
+            {
+                EntityBodyIndexMap.Clear();
+            }
+        }
+
+        [BurstCompile]
+        private struct SetChangedJob : IJob
+        {
+            public NativeReference<int> haveStaticBodiesChanged;
+            public int Value;
+
+            public void Execute()
+            {
+                haveStaticBodiesChanged.Value = this.Value;
+            }
+        }
 
         [BurstCompile]
         private static class Jobs
