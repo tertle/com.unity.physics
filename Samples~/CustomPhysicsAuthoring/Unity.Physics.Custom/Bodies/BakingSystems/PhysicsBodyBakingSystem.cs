@@ -124,9 +124,9 @@ namespace Unity.Physics.Authoring
     [RequireMatchingQueriesForUpdate]
     [UpdateAfter(typeof(EndColliderBakingSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.BakingSystem)]
-    public partial class PhysicsBodyBakingSystem : SystemBase
+    public partial struct PhysicsBodyBakingSystem : ISystem
     {
-        protected override void OnUpdate()
+        public void OnUpdate(ref SystemState state)
         {
             // Fill in the MassProperties based on the potential calculated value by BuildCompoundColliderBakingSystem
             foreach (var(physicsMass, bodyData, collider) in

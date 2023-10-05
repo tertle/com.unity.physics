@@ -5,18 +5,22 @@ using Unity.Transforms;
 namespace Unity.Physics.Authoring
 {
     /// <summary>
-    /// Represents a system that applies and rescales a non-identity scale to a uniform scale
+    /// Post process baking system which extracts any non-identity scale and skew present on physics entities and bakes
+    /// it into the <see cref="PostTransformMatrix">. This is necessary since the transformation of physics entities (e.g., colliders)
+    /// is represented by a <see cref="LocalTransform"> component only, which does not support any non-uniform scale or skew.
+    /// Consequently, the <see cref="PostTransformMatrix"> is applied to the latest transformation matrix of the entity
+    /// after every physics step in order to render the entity correctly.
     /// </summary>
     [RequireMatchingQueriesForUpdate]
     [UpdateAfter(typeof(RigidbodyBakingSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.BakingSystem)]
-    public partial class PostProcessPhysicsTransformBakingSystem : SystemBase
+    public partial struct PostProcessPhysicsTransformBakingSystem : ISystem
     {
-        internal void PostProcessTransformComponents(Entity entity, PhysicsPostProcessData physicsPostProcessData)
+        internal void PostProcessTransformComponents(Entity entity, PhysicsPostProcessData physicsPostProcessData, ref SystemState state)
         {
             var rigidBodyTransform = Math.DecomposeRigidBodyTransform(physicsPostProcessData.LocalToWorldMatrix);
 
-            var manager = EntityManager;
+            var manager = state.EntityManager;
 
             if (math.lengthsq((float3)physicsPostProcessData.LossyScale - new float3(1f)) > .0001f)
             {
@@ -35,13 +39,13 @@ namespace Unity.Physics.Authoring
                 LocalTransform.FromPositionRotationScale(rigidBodyTransform.pos, rigidBodyTransform.rot, uniformScale));
         }
 
-        protected override void OnUpdate()
+        public void OnUpdate(ref SystemState state)
         {
             foreach (var(postProcessData, entity) in SystemAPI.Query<RefRO<PhysicsPostProcessData>>()
                      .WithEntityAccess()
                      .WithOptions(EntityQueryOptions.IncludePrefab | EntityQueryOptions.IncludeDisabledEntities))
             {
-                PostProcessTransformComponents(entity, postProcessData.ValueRO);
+                PostProcessTransformComponents(entity, postProcessData.ValueRO, ref state);
             }
         }
     }
