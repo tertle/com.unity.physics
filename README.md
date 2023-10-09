@@ -3,6 +3,7 @@ This fork provides performance optimizations, quick fixes, and improvements to t
 
 ## Changes
 - Uniform scale no longer bakes into colliders.
+- Removed all sync points.
 
 # About Unity Physics
 The Unity Physics package provides a stateless, high-performance constrained rigid body simulation.
