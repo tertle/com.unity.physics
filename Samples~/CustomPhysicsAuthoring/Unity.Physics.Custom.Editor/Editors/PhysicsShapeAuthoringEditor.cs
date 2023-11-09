@@ -462,7 +462,7 @@ namespace Unity.Physics.Editor
                 using (var so = new SerializedObject(shape))
                 {
                     var customMesh = so.FindProperty(m_CustomMesh.propertyPath).objectReferenceValue as UnityEngine.Mesh;
-					if (customMesh != null)
+                    if (customMesh != null)
                     {
                         m_GeometryState |= GetGeometryState(customMesh, shape.gameObject);
                         continue;

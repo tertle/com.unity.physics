@@ -69,7 +69,7 @@ namespace Unity.Physics.Tests.Authoring
             var unscaledMassProperties = PhysicsMass.CreateDynamic(MassProperties.UnitSphere, rigidBody.mass);
             var actualMassProperties = TransformConversionUtils.ConvertHierarchyAndUpdateTransformSystems<PhysicsMass>(Root);
 
-            // we expect the mass to be affected by the scale
+            // we expect the mass to be unaffected by the scale
             UnityAssert.AreApproximatelyEqual(actualMassProperties.InverseMass, unscaledMassProperties.InverseMass);
             // we expect the inertia tensor to be affected by the scale, and not to match the unit sphere inertia tensor despite
             // the (unscaled) sphere collider component being set up as a unit sphere.
