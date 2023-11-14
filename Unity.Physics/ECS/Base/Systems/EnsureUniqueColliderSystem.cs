@@ -33,6 +33,7 @@ namespace Unity.Physics.Systems
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<BeginFixedStepSimulationEntityCommandBufferSystem.Singleton>();
+            state.RequireForUpdate<EnsureUniqueColliderBlobTag>();
         }
 
         [BurstCompile]

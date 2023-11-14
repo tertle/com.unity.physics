@@ -35,7 +35,7 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            ref var buildPhysicsData = ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>()).ValueRW;
+            ref var buildPhysicsData = ref SystemAPI.GetSingletonRW<BuildPhysicsWorldData>().ValueRW;
             buildPhysicsData.AddInputDependencyToComplete(state.Dependency);
         }
     }
@@ -148,8 +148,7 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            ref var buildPhysicsData = ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.SystemHandle).ValueRW;
-            buildPhysicsData.m_InputDependencyToComplete.Complete();
+            ref var buildPhysicsData = ref SystemAPI.GetSingletonRW<BuildPhysicsWorldData>().ValueRW;
 
             float timeStep = SystemAPI.Time.DeltaTime;
 
@@ -157,6 +156,8 @@ namespace Unity.Physics.Systems
             {
                 stepComponent = PhysicsStep.Default;
             }
+
+            state.Dependency = JobHandle.CombineDependencies(buildPhysicsData.m_InputDependencyToComplete, state.Dependency);
 
             state.Dependency = PhysicsWorldBuilder.SchedulePhysicsWorldBuild(ref state, ref buildPhysicsData.PhysicsData, state.Dependency,
                 timeStep, stepComponent.MultiThreaded > 0, stepComponent.Gravity, state.LastSystemVersion);
@@ -260,9 +261,9 @@ namespace Unity.Physics.Systems
 
         internal void RecordIntegrity(NativeParallelHashMap<uint, long> integrityCheckMap, ref SystemState state)
         {
-            integrityCheckMap.Clear();
+            state.Dependency = new ClearIntegrityCheckMapJob { IntegrityCheckMap = integrityCheckMap }.Schedule(state.Dependency);
 
-            var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(state.SystemHandle);
+            var buildPhysicsData = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
 
             var dynamicBodyIntegrity = new Jobs.RecordDynamicBodyIntegrity
             {
@@ -284,6 +285,17 @@ namespace Unity.Physics.Systems
 
             handle = staticBodyColliderIntegrity.Schedule(buildPhysicsData.PhysicsData.StaticEntityGroup, handle);
             state.Dependency = JobHandle.CombineDependencies(state.Dependency, handle);
+        }
+
+        [BurstCompile]
+        private struct ClearIntegrityCheckMapJob : IJob
+        {
+            public NativeParallelHashMap<uint, long> IntegrityCheckMap;
+
+            public void Execute()
+            {
+                this.IntegrityCheckMap.Clear();
+            }
         }
 
         #endregion
