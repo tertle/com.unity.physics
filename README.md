@@ -1,3 +1,9 @@
+# Physics Fork
+This fork provides performance optimizations, quick fixes, and improvements to the physics package. It will never add new features. Therefore, as long as you don't depend on some obscure behavior, you should always be able to switch between the official package and this fork without any issues.
+
+## Changes
+- Removed all sync points.
+
 # About Unity Physics
 The Unity Physics package provides a stateless, high-performance constrained rigid body simulation.
 
