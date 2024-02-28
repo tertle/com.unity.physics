@@ -62,11 +62,9 @@ namespace Unity.Physics.Systems
         /// <returns>   A JobHandle. </returns>
         public static JobHandle SchedulePhysicsWorldBuild(ref SystemState systemState,
             ref PhysicsWorld world, ref NativeReference<int> haveStaticBodiesChanged, in PhysicsWorldData.PhysicsWorldComponentHandles componentHandles,
-            in JobHandle inputDep, float timeStep, bool isBroadphaseBuildMultiThreaded, float3 gravity, uint lastSystemVersion,
+            JobHandle inputDep, float timeStep, bool isBroadphaseBuildMultiThreaded, float3 gravity, uint lastSystemVersion,
             EntityQuery dynamicEntityGroup, EntityQuery staticEntityQuery, EntityQuery jointEntityGroup)
         {
-            JobHandle finalHandle = inputDep;
-
             int numDynamicBodies = dynamicEntityGroup.CalculateEntityCount();
             int numStaticBodies = staticEntityQuery.CalculateEntityCount();
             int numJoints = jointEntityGroup.CalculateEntityCount();
@@ -77,24 +75,37 @@ namespace Unity.Physics.Systems
             if (numDynamicBodies + numStaticBodies == 0 && world.NumBodies == 1)
             {
                 // No bodies in the scene, no need to do anything else
-                haveStaticBodiesChanged.Value = 0;
-                return finalHandle;
+                return new SetChangedJob { haveStaticBodiesChanged = haveStaticBodiesChanged, Value = 0 }.Schedule(inputDep);
             }
 
             // Resize the world's native arrays
-            world.Reset(
-                numStaticBodies + 1, // +1 for the default static body
-                numDynamicBodies,
-                numJoints);
+            if (world.NumStaticBodies != numStaticBodies + 1 || world.NumDynamicBodies != numDynamicBodies || world.NumJoints != numJoints)
+            {
+                inputDep.Complete();
+                // Resize the world's native arrays
+                world.Reset(
+                    numStaticBodies + 1, // +1 for the default static body
+                    numDynamicBodies,
+                    numJoints);
+            }
+            else
+            {
+                inputDep = new ClearMapsJob
+                    {
+                        EntityBodyIndexMap = world.CollisionWorld.EntityBodyIndexMap,
+                        EntityJointIndexMap = world.DynamicsWorld.EntityJointIndexMap,
+                    }
+                    .Schedule(inputDep);
+            }
 
             // Determine if the static bodies have changed in any way that will require the static broadphase tree to be rebuilt
-            JobHandle staticBodiesCheckHandle = default;
+            JobHandle staticBodiesCheckHandle;
 
-            haveStaticBodiesChanged.Value = 0;
+            inputDep = new SetChangedJob { haveStaticBodiesChanged = haveStaticBodiesChanged, Value = 0 }.Schedule(inputDep);
             {
                 if (world.NumStaticBodies != previousStaticBodyCount)
                 {
-                    haveStaticBodiesChanged.Value = 1;
+                    staticBodiesCheckHandle = new SetChangedJob { haveStaticBodiesChanged = haveStaticBodiesChanged, Value = 1 }.Schedule(inputDep);
                 }
                 else
                 {
@@ -222,10 +233,8 @@ namespace Unity.Physics.Systems
                     haveStaticBodiesChanged, combinedHandle, isBroadphaseBuildMultiThreaded);
                 jobHandles.Add(buildBroadphaseHandle);
 
-                finalHandle = JobHandle.CombineDependencies(inputDep, JobHandle.CombineDependencies(jobHandles.AsArray()));
+                return JobHandle.CombineDependencies(inputDep, JobHandle.CombineDependencies(jobHandles.AsArray()));
             }
-
-            return finalHandle;
         }
 
         /// <summary>
@@ -555,6 +564,31 @@ namespace Unity.Physics.Systems
         }
 
         #region Jobs
+
+        [BurstCompile]
+        private struct ClearMapsJob : IJob
+        {
+            public NativeParallelHashMap<Entity, int> EntityBodyIndexMap;
+            public NativeParallelHashMap<Entity, int> EntityJointIndexMap;
+
+            public void Execute()
+            {
+                EntityBodyIndexMap.Clear();
+                EntityJointIndexMap.Clear();
+            }
+        }
+
+        [BurstCompile]
+        private struct SetChangedJob : IJob
+        {
+            public NativeReference<int> haveStaticBodiesChanged;
+            public int Value;
+
+            public void Execute()
+            {
+                haveStaticBodiesChanged.Value = this.Value;
+            }
+        }
 
         [BurstCompile]
         private static class Jobs
