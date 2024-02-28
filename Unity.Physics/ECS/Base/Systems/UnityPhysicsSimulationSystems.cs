@@ -180,8 +180,7 @@ namespace Unity.Physics.Systems
                 stepComponent = PhysicsStep.Default;
             }
 
-            var bpw = state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>();
-            var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(bpw);
+            var buildPhysicsData = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
 
             bool multiThreaded = stepComponent.MultiThreaded > 0;
             SimulationStepInput stepInput = new SimulationStepInput()
@@ -277,6 +276,7 @@ namespace Unity.Physics.Systems
 
             m_PhysicsColliderQuery = state.GetEntityQuery(ComponentType.ReadWrite<PhysicsCollider>());
             SystemAPI.GetSingletonRW<PhysicsWorldSingleton>();
+            SystemAPI.GetSingletonRW<BuildPhysicsWorldData>();
         }
 
         [BurstCompile]

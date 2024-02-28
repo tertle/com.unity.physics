@@ -35,7 +35,7 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            ref var buildPhysicsData = ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>()).ValueRW;
+            ref var buildPhysicsData = ref SystemAPI.GetSingletonRW<BuildPhysicsWorldData>().ValueRW;
             buildPhysicsData.AddInputDependencyToComplete(state.Dependency);
         }
     }
@@ -154,8 +154,7 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            ref var buildPhysicsData = ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.SystemHandle).ValueRW;
-            buildPhysicsData.m_InputDependencyToComplete.Complete();
+            ref var buildPhysicsData = ref SystemAPI.GetSingletonRW<BuildPhysicsWorldData>().ValueRW;
 
             float timeStep = SystemAPI.Time.DeltaTime;
 
@@ -163,6 +162,8 @@ namespace Unity.Physics.Systems
             {
                 stepComponent = PhysicsStep.Default;
             }
+
+            state.Dependency = JobHandle.CombineDependencies(buildPhysicsData.m_InputDependencyToComplete, state.Dependency);
 
             state.Dependency = PhysicsWorldBuilder.SchedulePhysicsWorldBuild(ref state, ref buildPhysicsData.PhysicsData, state.Dependency,
                 timeStep, stepComponent.MultiThreaded > 0, stepComponent.Gravity, state.LastSystemVersion);
@@ -211,8 +212,8 @@ namespace Unity.Physics.Systems
         {
             // these getter are not waiting for depedencies on the main thread, and that would avoid blocking for no
             // reason.
-            var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(m_BuildSystemHandle);
-            buildPhysicsData.IntegrityCheckMap.Clear();
+            var buildPhysicsData = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
+            state.Dependency = new ClearIntegrityCheckMapJob { IntegrityCheckMap = buildPhysicsData.IntegrityCheckMap }.Schedule(state.Dependency);
             // Should be un-necessary to update the handles at this point (there are no structural changes at this point)
             // has been added as extra safety measure.
             // buildPhysicsData.PhysicsData.ComponentHandles.Update(ref state);
@@ -228,6 +229,17 @@ namespace Unity.Physics.Systems
                 IntegrityCheckMap = buildPhysicsData.IntegrityCheckMap,
                 PhysicsColliderType = buildPhysicsData.PhysicsData.ComponentHandles.PhysicsColliderType
             }.Schedule(buildPhysicsData.PhysicsData.StaticEntityGroup, state.Dependency);;
+        }
+
+        [BurstCompile]
+        private struct ClearIntegrityCheckMapJob : IJob
+        {
+            public NativeParallelHashMap<uint, long> IntegrityCheckMap;
+
+            public void Execute()
+            {
+                this.IntegrityCheckMap.Clear();
+            }
         }
     }
 
@@ -353,12 +365,8 @@ namespace Unity.Physics.Systems
     [UpdateAfter(typeof(PhysicsBuildWorldGroup))]
     internal partial struct PhysicsAnalyticsSystem : ISystem
     {
-        SystemHandle m_BuildSystemHandle;
-
         public void OnCreate(ref SystemState state)
         {
-            m_BuildSystemHandle = state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>();
-
             var physicsAnalyticsSingleton = new PhysicsAnalyticsSingleton();
             physicsAnalyticsSingleton.Clear();
             state.EntityManager.CreateSingleton(physicsAnalyticsSingleton);
@@ -378,19 +386,8 @@ namespace Unity.Physics.Systems
             var analyticsData = SystemAPI.GetSingletonRW<PhysicsAnalyticsSingleton>();
             analyticsData.ValueRW.m_SimulationType = stepComponent.SimulationType;
 
-            if (m_BuildSystemHandle == SystemHandle.Null)
-            {
-                return;
-            }
-            // else:
 
-            if (!state.EntityManager.HasComponent<BuildPhysicsWorldData>(m_BuildSystemHandle))
-            {
-                return;
-            }
-            // else:
-
-            var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(m_BuildSystemHandle);
+            var buildPhysicsData = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
 
             var jointAnalyticsJob = new AnalyticsJobs.PhysicsJointsAnalyticsJob
             {
