@@ -111,7 +111,11 @@ namespace Unity.Physics.Tests.Authoring
         public void RigidbodyConversion_Damping()
         {
             CreateHierarchy(new[] { typeof(Rigidbody) }, Array.Empty<Type>(), Array.Empty<Type>());
+#if UNITY_2023_3_OR_NEWER
+            Root.GetComponent<Rigidbody>().linearDamping = 0.5f;
+#else
             Root.GetComponent<Rigidbody>().drag = 0.5f;
+#endif
 
             TestConvertedData<PhysicsDamping>(damping => Assert.That(damping.Linear, Is.EqualTo(0.5f)));
         }
