@@ -205,9 +205,9 @@ namespace Unity.Physics
                 m_StaticTree.Nodes.Length, m_StaticTree.Ranges, m_StaticTree.BranchCount);
 
             //@TODO: Switch to World allocator and remove Dispose job completely
-            var disposeJob = numStaticBodiesArray.Dispose(handle);
+            numStaticBodiesArray.Dispose(handle);
 
-            return JobHandle.CombineDependencies(buildHandle, disposeJob);
+            return JobHandle.CombineDependencies(buildHandle, handle);
         }
 
         /// <summary>
@@ -245,7 +245,8 @@ namespace Unity.Physics
                 m_DynamicTree.Nodes.Length, m_DynamicTree.Ranges, m_DynamicTree.BranchCount);
 
             //@TODO: Remove this and replace with WorldAllocator
-            return shouldDoWork.Dispose(handle);
+            shouldDoWork.Dispose(handle);
+            return handle;
         }
 
         #endregion
@@ -345,10 +346,9 @@ namespace Unity.Physics
             }.Schedule(staticVsDynamicNodePairIndices, 1, JobHandle.CombineDependencies(staticVsDynamicPairs, staticConstruct));
 
             // Dispose node pair lists
-            var disposeOverlapPairs0 = dynamicVsDynamicNodePairIndices.Dispose(dynamicVsDynamicHandle);
-            var disposeOverlapPairs1 = staticVsDynamicNodePairIndices.Dispose(staticVsDynamicHandle);
+            dynamicVsDynamicNodePairIndices.Dispose(dynamicVsDynamicHandle);
+            staticVsDynamicNodePairIndices.Dispose(staticVsDynamicHandle);
 
-            returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(disposeOverlapPairs0, disposeOverlapPairs1);
             returnHandles.FinalExecutionHandle = JobHandle.CombineDependencies(dynamicVsDynamicHandle, staticVsDynamicHandle);
 
             return returnHandles;
