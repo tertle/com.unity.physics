@@ -4,6 +4,30 @@ uid: unity-physics-changelog
 
 # Changelog
 
+## [1.2.3] - 2024-05-30
+
+### Changed
+
+* `IntegrityChecks` is now under `ProjectSettings` > `Physics` > `Unity Physics` > `Enable Integrity Checks`.
+* Updated entities packages dependencies
+
+
+## [1.2.1] - 2024-04-26
+
+### Changed
+
+* Updated Burst dependency to version 1.8.13
+* Updated entities packages dependencies
+
+
+## [1.2.0] - 2024-03-22
+
+### Fixed
+
+* Fix a number of memory leaks in the package and its test code.
+* Make sure that the `ColliderBlobCleanupSystem` does not dispose the same collider blob multiple times in Netcode environments, preventing a crash.
+
+
 ## [1.2.0-pre.12] - 2024-02-13
 
 ### Added
@@ -24,7 +48,6 @@ uid: unity-physics-changelog
 ### Updated
 
 * Upgraded Test Framework version to 1.4.3
-
 
 ## [1.2.0-pre.6] - 2023-12-13
 
