@@ -179,9 +179,8 @@ namespace Unity.Physics
 
                 JobHandle handle = buildJob.ScheduleUnsafeIndex0(solverSchedulerInfo.NumWorkItems, 1, inputDeps);
 
-                returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(
-                    dispatchPairs.Dispose(handle),
-                    contacts.Dispose(handle));
+                dispatchPairs.Dispose(handle);
+                contacts.Dispose(handle);
 
                 returnHandles.FinalExecutionHandle = handle;
             }
@@ -959,9 +958,8 @@ namespace Unity.Physics
             }
 
             // Dispose processed data
-            returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(
-                jacobians.Dispose(handle),
-                solverSchedulerInfo.ScheduleDisposeJob(handle));
+            jacobians.Dispose(handle);
+            solverSchedulerInfo.ScheduleDisposeJob(handle);
             returnHandles.FinalExecutionHandle = handle;
 
             return returnHandles;
