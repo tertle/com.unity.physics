@@ -266,7 +266,8 @@ namespace Unity.Physics
             var buildHandle = StaticTree.BoundingVolumeHierarchy.ScheduleBuildJobs(
                 points, aabbs, StaticTree.BodyFilters.AsArray(), shouldDoWork, numThreadsHint, handle, StaticTree.Ranges, StaticTree.BranchCount);
 
-            return JobHandle.CombineDependencies(buildHandle, numStaticBodiesArray.Dispose(handle));
+            numStaticBodiesArray.Dispose(handle);
+            return JobHandle.CombineDependencies(buildHandle, handle);
         }
 
         /// <summary>
@@ -313,7 +314,8 @@ namespace Unity.Physics
                 points, aabbs, DynamicTree.BodyFilters.AsArray(), shouldDoWork, numThreadsHint, handle,
                 DynamicTree.Ranges, DynamicTree.BranchCount);
 
-            return shouldDoWork.Dispose(handle);
+            shouldDoWork.Dispose(handle);
+            return handle;
         }
 
         #endregion
@@ -438,10 +440,9 @@ namespace Unity.Physics
             }.Schedule(staticVsDynamicNodePairIndices, 1, JobHandle.CombineDependencies(staticVsDynamicPairs, staticConstruct));
 
             // Dispose node pair lists
-            var disposeOverlapPairs0 = dynamicVsDynamicNodePairIndices.Dispose(dynamicVsDynamicHandle);
-            var disposeOverlapPairs1 = staticVsDynamicNodePairIndices.Dispose(staticVsDynamicHandle);
+            dynamicVsDynamicNodePairIndices.Dispose(dynamicVsDynamicHandle);
+            staticVsDynamicNodePairIndices.Dispose(staticVsDynamicHandle);
 
-            returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(disposeOverlapPairs0, disposeOverlapPairs1);
             returnHandles.FinalExecutionHandle = JobHandle.CombineDependencies(dynamicVsDynamicHandle, staticVsDynamicHandle);
 
             return returnHandles;

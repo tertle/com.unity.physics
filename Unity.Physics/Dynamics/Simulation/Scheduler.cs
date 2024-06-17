@@ -364,9 +364,8 @@ namespace Unity.Physics
 
                 // We must dispose pair streams here, since we don't have access to them
                 // where we would ideally like to schedule their disposal
-                returnHandles.FinalExecutionHandle = JobHandle.CombineDependencies(
-                    dynamicVsDynamicBroadphasePairsStream.Dispose(returnHandles.FinalExecutionHandle),
-                    staticVsDynamicBroadphasePairStream.Dispose(returnHandles.FinalExecutionHandle));
+                dynamicVsDynamicBroadphasePairsStream.Dispose(returnHandles.FinalExecutionHandle);
+                staticVsDynamicBroadphasePairStream.Dispose(returnHandles.FinalExecutionHandle);
 
                 return returnHandles;
             }
@@ -388,9 +387,8 @@ namespace Unity.Physics
                 }.Schedule(inputDeps);
 
                 // Dispose our broad phase pairs
-                var disposeBroadphasePairs0 = dynamicVsDynamicBroadphasePairsStream.Dispose(dispatchHandle);
-                var disposeBroadphasePairs1 = staticVsDynamicBroadphasePairStream.Dispose(dispatchHandle);
-                returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(disposeBroadphasePairs0, disposeBroadphasePairs1);
+                dynamicVsDynamicBroadphasePairsStream.Dispose(dispatchHandle);
+                staticVsDynamicBroadphasePairStream.Dispose(dispatchHandle);
 
                 // Sort into the target array
                 sortHandle = ScheduleSortJob(world.NumBodies,
@@ -412,9 +410,8 @@ namespace Unity.Physics
             }.Schedule(sortHandle);
 
             // Dispose
-            var disposePhasedDispatchPairs = sortedPairs.Dispose(dispatchPairHandle);
+            sortedPairs.Dispose(dispatchPairHandle);
 
-            returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(returnHandles.FinalDisposeHandle, disposePhasedDispatchPairs);
             returnHandles.FinalExecutionHandle = dispatchPairHandle;
 
             return returnHandles;
