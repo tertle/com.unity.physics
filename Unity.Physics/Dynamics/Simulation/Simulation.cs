@@ -542,10 +542,7 @@ namespace Unity.Physics
             // Solve all Jacobians
 
             // make sure we know the number of phased dispatch pairs so that we can efficiently schedule the solve jobs in Solver.ScheduleSolveJacobiansJobs() below
-            if (multiThreaded)
-            {
-                StepContext.CreatePhasedDispatchPairsJobHandle.Complete();
-            }
+            m_StepHandles.FinalDisposeHandle = JobHandle.CombineDependencies(StepContext.CreatePhasedDispatchPairsJobHandle, m_StepHandles.FinalDisposeHandle);
 
             var disposeHandle = m_StepHandles.FinalDisposeHandle;
             Solver.StabilizationData solverStabilizationData = new Solver.StabilizationData(input, SimulationContext);
