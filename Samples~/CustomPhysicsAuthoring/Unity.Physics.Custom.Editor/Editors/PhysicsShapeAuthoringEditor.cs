@@ -359,7 +359,7 @@ namespace Unity.Physics.Editor
                 }.Schedule();
             }
 
-            unsafe void CheckPreviewJobsForCompletion()
+            void CheckPreviewJobsForCompletion()
             {
                 var repaintSceneViews = false;
 

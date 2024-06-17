@@ -1,7 +1,6 @@
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
-using UnityEngine;
 
 namespace Unity.Physics.Authoring
 {
@@ -14,7 +13,9 @@ namespace Unity.Physics.Authoring
                 var transform = shape.transform;
                 var localToWorld = (float4x4)transform.localToWorldMatrix;
                 var shapeToWorld = shape.GetShapeToWorldMatrix();
-                return BakeBoxJob.GetBakeToShape(localToWorld, shapeToWorld, ref center, ref orientation);
+                quaternion tmpOri = orientation;
+                return Math.GetBakeToShape(localToWorld, shapeToWorld, ref center,
+                    ref tmpOri);
             }
         }
 
@@ -25,8 +26,9 @@ namespace Unity.Physics.Authoring
                 var transform = shape.transform;
                 var localToWorld = (float4x4)transform.localToWorldMatrix;
                 var shapeToWorld = shape.GetShapeToWorldMatrix();
-                return BakeCapsuleJob.GetBakeToShape(localToWorld, shapeToWorld, ref center,
-                    ref orientation);
+                quaternion tmpOri = orientation;
+                return Math.GetBakeToShape(localToWorld, shapeToWorld, ref center,
+                    ref tmpOri, bakeUniformScale: true, makeZAxisPrimaryBasis: true);
             }
         }
 
@@ -75,8 +77,9 @@ namespace Unity.Physics.Authoring
                 var transform = shape.transform;
                 var localToWorld = (float4x4)transform.localToWorldMatrix;
                 var shapeToWorld = shape.GetShapeToWorldMatrix();
-                return BakeCylinderJob.GetBakeToShape(localToWorld, shapeToWorld, ref center,
-                    ref orientation);
+                quaternion tmpOri = orientation;
+                return Math.GetBakeToShape(localToWorld, shapeToWorld, ref center,
+                    ref tmpOri, bakeUniformScale: true, makeZAxisPrimaryBasis: true);
             }
         }
 
@@ -90,12 +93,13 @@ namespace Unity.Physics.Authoring
         public static void SetBakedSphereRadius(this PhysicsShapeAuthoring shape, float radius)
         {
             var sphere = shape.GetSphereProperties(out EulerAngles eulerAngles);
+            quaternion orientation = eulerAngles;
             var center = sphere.Center;
             radius = math.abs(radius);
 
-            var basisToWorld    = GetBasisToWorldMatrix(shape.transform.localToWorldMatrix, center, eulerAngles, 1f);
-            var basisPriority   = basisToWorld.HasShear() ? GetBasisAxisPriority(basisToWorld) : k_DefaultAxisPriority;
-            var bakeToShape     = GetPrimitiveBakeToShapeMatrix(shape.transform.localToWorldMatrix, shape.GetShapeToWorldMatrix(), ref center, ref eulerAngles, 1f, basisPriority);
+            var basisToWorld    = Math.GetBasisToWorldMatrix(shape.transform.localToWorldMatrix, center, orientation, 1f);
+            var basisPriority   = basisToWorld.HasShear() ? Math.GetBasisAxisPriority(basisToWorld) : Math.Constants.DefaultAxisPriority;
+            var bakeToShape     = Math.GetPrimitiveBakeToShapeMatrix(shape.transform.localToWorldMatrix, shape.GetShapeToWorldMatrix(), ref center, ref orientation, basisPriority);
 
             var scale = math.cmax(bakeToShape.DecomposeScale());
 
