@@ -21,7 +21,7 @@ namespace Unity.Physics
     {
         [NoAlias] private NativeArray<RigidBody> m_Bodies;    // storage for all the rigid bodies
         [NoAlias] internal Broadphase Broadphase;             // bounding volume hierarchies around subsets of the rigid bodies
-        [NoAlias] internal NativeParallelHashMap<Entity, int> EntityBodyIndexMap;
+        [NoAlias] internal NativeHashMap<Entity, int> EntityBodyIndexMap;
         [NativeDisableContainerSafetyRestriction]
         [NoAlias] private NativeList<BlobAssetReference<Collider>> m_ColliderDeepCopies;
 
@@ -79,7 +79,7 @@ namespace Unity.Physics
         {
             m_Bodies = new NativeArray<RigidBody>(numStaticBodies + numDynamicBodies, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             Broadphase = new Broadphase(numStaticBodies, numDynamicBodies);
-            EntityBodyIndexMap = new NativeParallelHashMap<Entity, int>(m_Bodies.Length, Allocator.Persistent);
+            EntityBodyIndexMap = new NativeHashMap<Entity, int>(m_Bodies.Length, Allocator.Persistent);
             m_ColliderDeepCopies = new NativeList<BlobAssetReference<Collider>>();
             CollisionTolerance = DefaultCollisionTolerance;
         }
@@ -147,7 +147,7 @@ namespace Unity.Physics
             {
                 m_Bodies = new NativeArray<RigidBody>(m_Bodies, Allocator.Persistent),
                 Broadphase = Broadphase.Clone(),
-                EntityBodyIndexMap = new NativeParallelHashMap<Entity, int>(m_Bodies.Length, Allocator.Persistent),
+                EntityBodyIndexMap = new NativeHashMap<Entity, int>(m_Bodies.Length, Allocator.Persistent),
                 m_ColliderDeepCopies = default
             };
             clone.UpdateBodyIndexMap();
@@ -180,7 +180,7 @@ namespace Unity.Physics
             {
                 m_Bodies = new NativeArray<RigidBody>(m_Bodies, Allocator.Persistent),
                 Broadphase = Broadphase.Clone(),
-                EntityBodyIndexMap = new NativeParallelHashMap<Entity, int>(m_Bodies.Length, Allocator.Persistent),
+                EntityBodyIndexMap = new NativeHashMap<Entity, int>(m_Bodies.Length, Allocator.Persistent),
                 m_ColliderDeepCopies = default
             };
             clone.UpdateBodyIndexMap();
