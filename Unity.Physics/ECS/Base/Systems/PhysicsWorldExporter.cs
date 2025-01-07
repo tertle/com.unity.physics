@@ -84,42 +84,6 @@ namespace Unity.Physics.Systems
             return inputDep;
         }
 
-        /// <summary>
-        /// Copies positions and velocities of all dynamic bodies from specified PhysicsWorld to ECS
-        /// components of entities returned by specified query. No need to call <see cref="ExportPhysicsWorldTypeHandles.Update(ref SystemState)"/>
-        /// prior to calling this method.
-        /// </summary>
-        ///
-        /// <param name="systemState">                  [in,out] State of the system. </param>
-        /// <param name="exportPhysicsWorldHandles">    [in,out] The export physics world handles. </param>
-        /// <param name="world">                        The world. </param>
-        /// <param name="dynamicEntities">              The dynamic entities. </param>
-        public static void ExportPhysicsWorldImmediate(
-            ref SystemState systemState,
-            ref ExportPhysicsWorldTypeHandles exportPhysicsWorldHandles,
-            in PhysicsWorld world,
-            EntityQuery dynamicEntities
-        )
-        {
-            if (world.NumDynamicBodies > 0)
-            {
-                using var chunkBaseEntityIndices = dynamicEntities.CalculateBaseEntityIndexArray(Allocator.TempJob);
-                exportPhysicsWorldHandles.Update(ref systemState);
-
-                new ExportDynamicBodiesJob
-                {
-                    MotionVelocities = world.MotionVelocities,
-                    MotionDatas = world.MotionDatas,
-
-                    LocalTransformType = exportPhysicsWorldHandles.LocalTransformType,
-
-                    SimulateType = exportPhysicsWorldHandles.SimulateType,
-                    VelocityType = exportPhysicsWorldHandles.PhysicsVelocityType,
-                    ChunkBaseEntityIndices = chunkBaseEntityIndices,
-                }.Run(dynamicEntities);
-            }
-        }
-
         #region Jobs
 
         [BurstCompile]
