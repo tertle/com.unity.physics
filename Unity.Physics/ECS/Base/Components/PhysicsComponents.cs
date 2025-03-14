@@ -3,8 +3,6 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Physics.Extensions;
-using Unity.Transforms;
-using Unity.Physics.Aspects;
 
 namespace Unity.Physics
 {
@@ -447,7 +445,7 @@ namespace Unity.Physics
     /// read write access to the world, use (SystemBase|SystemAPI|EntityQuery).GetSingletonRW&lt;
     /// PhysicsWorldSingleton&gt;().
     /// </summary>
-    public struct PhysicsWorldSingleton : IComponentData, ICollidable, IAspectQueryable
+    public struct PhysicsWorldSingleton : IComponentData, ICollidable
     {
         /// <summary>   The physics world. </summary>
         public PhysicsWorld PhysicsWorld;
@@ -991,107 +989,6 @@ namespace Unity.Physics
         public bool CapsuleCastCustom<T>(float3 point1, float3 point2, float radius, float3 direction, float maxDistance, ref T collector, CollisionFilter filter, QueryInteraction queryInteraction = QueryInteraction.Default) where T : struct, ICollector<ColliderCastHit>
             => QueryWrappers.CapsuleCastCustom(in this, point1, point2, radius, direction, maxDistance, ref collector, filter, queryInteraction);
 
-        #endregion
-
-        #region IAspectQueryable
-        #pragma warning disable CS0618 // Disable Aspects obsolete warnings
-
-        /// <summary>   Cast an aspect against this <see cref="PhysicsWorldSingleton"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CastCollider(in this, colliderAspect, direction, maxDistance, queryInteraction);
-
-        /// <summary>   Cast an aspect against this <see cref="PhysicsWorldSingleton"/>. </summary>
-
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="closestHit">       [out] The closest hit. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, out ColliderCastHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CastCollider(in this, colliderAspect, direction, maxDistance, out closestHit, queryInteraction);
-
-        /// <summary>   Cast an aspect against this <see cref="PhysicsWorldSingleton"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="allHits">          [in,out] all hits. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, ref NativeList<ColliderCastHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CastCollider(in this, colliderAspect, direction, maxDistance, ref allHits, queryInteraction);
-
-        /// <summary>   Cast an aspect against this <see cref="PhysicsWorldSingleton"/>. </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="collector">        [in,out] The collector. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider<T>(in ColliderAspect colliderAspect, float3 direction, float maxDistance, ref T collector, QueryInteraction queryInteraction = QueryInteraction.Default)
-            where T : struct, ICollector<ColliderCastHit>
-            => PhysicsWorld.CastCollider(in colliderAspect, direction, maxDistance, ref collector, queryInteraction);
-
-        /// <summary>   Calculates the distance from an aspect. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CalculateDistance(in this, colliderAspect, maxDistance, queryInteraction);
-
-        /// <summary>   Calculates the distance from an aspect. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="closestHit">       [out] The closest hit. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, out DistanceHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CalculateDistance(in this, colliderAspect, maxDistance, out closestHit, queryInteraction);
-
-        /// <summary>   Calculates the distance from an aspect. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="allHits">          [in,out] all hits. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, ref NativeList<DistanceHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CalculateDistance(in this, colliderAspect, maxDistance, ref allHits, queryInteraction);
-
-        /// <summary>   Calculates the distance from an aspect. </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="collector">        [in,out] The collector. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance<T>(in ColliderAspect colliderAspect, float maxDistance, ref T collector, QueryInteraction queryInteraction = QueryInteraction.Default)
-            where T : struct, ICollector<DistanceHit>
-            => PhysicsWorld.CalculateDistance(in colliderAspect, maxDistance, ref collector, queryInteraction);
-
-        #pragma warning restore CS0618
         #endregion
     }
 

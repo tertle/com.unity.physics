@@ -6,7 +6,6 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Collections;
-using Unity.Physics.Aspects;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Physics.Systems;
 using Unity.Transforms;
@@ -18,7 +17,7 @@ namespace Unity.Physics
     /// collision queries such as raycasting, overlap testing, etc.
     /// </summary>
     [NoAlias]
-    public struct CollisionWorld : ICollidable, IAspectQueryable, IDisposable
+    public struct CollisionWorld : ICollidable, IDisposable
     {
         [NoAlias] private NativeArray<RigidBody> m_Bodies;    // storage for all the rigid bodies
         [NoAlias] internal Broadphase Broadphase;             // bounding volume hierarchies around subsets of the rigid bodies
@@ -1541,116 +1540,6 @@ namespace Unity.Physics
             input.InitScale();
             return Broadphase.CalculateDistance(input, m_Bodies, ref collector);
         }
-
-        #region Aspect query impl
-        #pragma warning disable CS0618 // Disable Aspects obsolete warnings
-
-        /// <summary>   Cast a collider aspect against this <see cref="CollisionWorld"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CastCollider(in this, colliderAspect, direction, maxDistance, queryInteraction);
-
-        /// <summary>   Cast a collider aspect against this <see cref="CollisionWorld"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="closestHit">       [out] The closest hit. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, out ColliderCastHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CastCollider(in this, colliderAspect, direction, maxDistance, out closestHit, queryInteraction);
-
-        /// <summary>   Cast a collider aspect against this <see cref="CollisionWorld"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="allHits">          [in,out] all hits. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, ref NativeList<ColliderCastHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CastCollider(in this, colliderAspect, direction, maxDistance, ref allHits, queryInteraction);
-
-        /// <summary>   Cast a collider aspect against this <see cref="CollisionWorld"/>. </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="collector">        [in,out] The collector. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider<T>(in ColliderAspect colliderAspect, float3 direction, float maxDistance, ref T collector, QueryInteraction queryInteraction = QueryInteraction.Default) where T : struct, ICollector<ColliderCastHit>
-        {
-            QueryInteractionCollector<ColliderCastHit, T> interactionCollector = new QueryInteractionCollector<ColliderCastHit, T>(ref collector, queryInteraction == QueryInteraction.Default, colliderAspect.Entity);
-
-            ColliderCastInput input = new ColliderCastInput(colliderAspect.m_Collider.ValueRO.Value, colliderAspect.Position,
-                colliderAspect.Position + direction * maxDistance, colliderAspect.Rotation, colliderAspect.Scale);
-            return CastCollider(input, ref interactionCollector);
-        }
-
-        /// <summary>   Calculates the distance from the collider aspect. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CalculateDistance(in this, colliderAspect, maxDistance, queryInteraction);
-
-        /// <summary>   Calculates the distance from the collider aspect. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="closestHit">       [out] The closest hit. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, out DistanceHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CalculateDistance(in this, colliderAspect, maxDistance, out closestHit, queryInteraction);
-
-        /// <summary>   Calculates the distance from the collider aspect. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="allHits">          [in,out] all hits. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, ref NativeList<DistanceHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CalculateDistance(in this, colliderAspect, maxDistance, ref allHits, queryInteraction);
-
-        /// <summary>   Calculates the distance from the collider aspect. </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="collector">        [in,out] The collector. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance<T>(in ColliderAspect colliderAspect, float maxDistance, ref T collector, QueryInteraction queryInteraction = QueryInteraction.Default) where T : struct, ICollector<DistanceHit>
-        {
-            QueryInteractionCollector<DistanceHit, T> interactionCollector = new QueryInteractionCollector<DistanceHit, T>(ref collector, queryInteraction == QueryInteraction.IgnoreTriggers, colliderAspect.Entity);
-
-            ColliderDistanceInput input = new ColliderDistanceInput(colliderAspect.m_Collider.ValueRO.Value, maxDistance,
-                new RigidTransform(colliderAspect.Rotation, colliderAspect.Position), colliderAspect.Scale);
-            return CalculateDistance(input, ref interactionCollector);
-        }
-
-        #pragma warning restore CS0618
-        #endregion
 
         #region GO API Queries
 
