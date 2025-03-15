@@ -11,20 +11,20 @@ namespace Unity.Physics.Systems
     /// </summary>
     [RequireMatchingQueriesForUpdate]
     [UpdateInGroup(typeof(BeforePhysicsSystemGroup), OrderFirst = true)]
-    partial struct EnsureUniqueColliderSystem : ISystem
+    internal partial struct EnsureUniqueColliderSystem : ISystem
     {
         [BurstCompile]
-        partial struct MakeUniqueJob : IJobEntity
+        private partial struct MakeUniqueJob : IJobEntity
         {
             public EntityCommandBuffer.ParallelWriter ECB;
 
-            void Execute(in Entity entity, in EnsureUniqueColliderBlobTag tag, ref PhysicsCollider collider, [ChunkIndexInQuery] int chunkIndex)
+            private void Execute(in Entity entity, in EnsureUniqueColliderBlobTag tag, ref PhysicsCollider collider, [ChunkIndexInQuery] int chunkIndex)
             {
                 // If the collider is not unique but should be, we need to ensure it is
                 if (!collider.IsUnique)
                 {
-                    collider.MakeUnique(entity, ECB, chunkIndex);
-                    ECB.RemoveComponent<EnsureUniqueColliderBlobTag>(chunkIndex, entity);
+                    collider.MakeUnique(entity, this.ECB, chunkIndex);
+                    this.ECB.RemoveComponent<EnsureUniqueColliderBlobTag>(chunkIndex, entity);
                 }
             }
         }
@@ -33,6 +33,7 @@ namespace Unity.Physics.Systems
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<EndFixedStepSimulationEntityCommandBufferSystem.Singleton>();
+            state.RequireForUpdate<EnsureUniqueColliderBlobTag>();
         }
 
         [BurstCompile]
@@ -43,7 +44,7 @@ namespace Unity.Physics.Systems
             // Run on all entities with colliders which are required to be unique and ensure that they are.
             state.Dependency = new MakeUniqueJob
             {
-                ECB = ecb.AsParallelWriter()
+                ECB = ecb.AsParallelWriter(),
             }.ScheduleParallel(state.Dependency);
         }
     }

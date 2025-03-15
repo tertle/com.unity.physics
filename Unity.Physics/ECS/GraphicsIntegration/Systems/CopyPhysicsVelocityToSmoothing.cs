@@ -43,7 +43,7 @@ namespace Unity.Physics.GraphicsIntegration
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            var bpwd = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>());
+            var bpwd = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
             SmoothedDynamicBodiesQuery.SetSharedComponentFilter(bpwd.WorldFilter);
             m_ComponentTypeHandle.Update(ref state);
             m_PhysicsGraphicalSmoothingType.Update(ref state);
