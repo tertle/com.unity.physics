@@ -41,9 +41,7 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            ref var buildPhysicsData = ref state.EntityManager
-                .GetComponentDataRW<BuildPhysicsWorldData>(state.WorldUnmanaged
-                    .GetExistingUnmanagedSystem<BuildPhysicsWorld>()).ValueRW;
+            ref var buildPhysicsData = ref SystemAPI.GetSingletonRW<BuildPhysicsWorldData>().ValueRW;
             buildPhysicsData.AddInputDependencyToComplete(state.Dependency);
         }
     }
@@ -82,22 +80,22 @@ namespace Unity.Physics.Systems
         /// <summary>   Gets the group the dynamic bodies belongs to. </summary>
         ///
         /// <value> The dynamic entity group. </value>
-        public EntityQuery DynamicEntityGroup => PhysicsData.DynamicEntityGroup;
+        public EntityQuery DynamicEntityGroup => this.PhysicsData.DynamicEntityGroup;
 
         /// <summary>   Gets the group the static bodies belongs to. </summary>
         ///
         /// <value> The static entity group. </value>
-        public EntityQuery StaticEntityGroup => PhysicsData.StaticEntityGroup;
+        public EntityQuery StaticEntityGroup => this.PhysicsData.StaticEntityGroup;
 
         /// <summary>   Gets the group the joints belongs to. </summary>
         ///
         /// <value> The joint entity group. </value>
-        public EntityQuery JointEntityGroup => PhysicsData.JointEntityGroup;
+        public EntityQuery JointEntityGroup => this.PhysicsData.JointEntityGroup;
 
         /// <summary>   True if the static bodies have changed this frame. </summary>
         ///
         /// <value> The have static bodies changed flag. </value>
-        public NativeReference<int> HaveStaticBodiesChanged => PhysicsData.HaveStaticBodiesChanged;
+        public NativeReference<int> HaveStaticBodiesChanged => this.PhysicsData.HaveStaticBodiesChanged;
 
 #if (UNITY_EDITOR || DEVELOPMENT_BUILD) && !UNITY_PHYSICS_DISABLE_INTEGRITY_CHECKS
         internal NativeParallelHashMap<uint, long> IntegrityCheckMap;
@@ -111,8 +109,7 @@ namespace Unity.Physics.Systems
         /// </summary>
         internal void AddInputDependencyToComplete(JobHandle dependencyToComplete)
         {
-            m_InputDependencyToComplete =
-                JobHandle.CombineDependencies(m_InputDependencyToComplete, dependencyToComplete);
+            this.m_InputDependencyToComplete = JobHandle.CombineDependencies(this.m_InputDependencyToComplete, dependencyToComplete);
         }
 
         /// <summary>
@@ -120,8 +117,8 @@ namespace Unity.Physics.Systems
         /// </summary>
         public void CompleteInputDependency()
         {
-            m_InputDependencyToComplete.Complete();
-            m_InputDependencyToComplete = default;
+            this.m_InputDependencyToComplete.Complete();
+            this.m_InputDependencyToComplete = default;
         }
     }
 
@@ -145,46 +142,42 @@ namespace Unity.Physics.Systems
                 PhysicsData = physicsData,
             });
 
-            state.EntityManager.CreateSingleton(
-                new PhysicsWorldSingleton
-                {
-                    PhysicsWorld = physicsData.PhysicsWorld,
-                    PhysicsWorldIndex = worldFilter
-                });
+            state.EntityManager.CreateSingleton(new PhysicsWorldSingleton
+            {
+                PhysicsWorld = physicsData.PhysicsWorld,
+                PhysicsWorldIndex = worldFilter,
+            });
         }
 
         [BurstCompile]
         public void OnDestroy(ref SystemState state)
         {
-            ref var buildPhysicsData =
-                ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.SystemHandle).ValueRW;
+            ref var buildPhysicsData = ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.SystemHandle).ValueRW;
             buildPhysicsData.PhysicsData.Dispose();
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            ref var buildPhysicsData =
-                ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.SystemHandle).ValueRW;
-            buildPhysicsData.m_InputDependencyToComplete.Complete();
+            ref var buildPhysicsData = ref SystemAPI.GetSingletonRW<BuildPhysicsWorldData>().ValueRW;
 
-            float timeStep = SystemAPI.Time.DeltaTime;
+            var timeStep = SystemAPI.Time.DeltaTime;
 
             if (!SystemAPI.TryGetSingleton(out PhysicsStep stepComponent))
             {
                 stepComponent = PhysicsStep.Default;
             }
 
-            state.Dependency = PhysicsWorldBuilder.SchedulePhysicsWorldBuild(ref state,
-                ref buildPhysicsData.PhysicsData, state.Dependency,
-                timeStep, stepComponent.CollisionTolerance, stepComponent.MultiThreaded > 0,
-                stepComponent.IncrementalDynamicBroadphase, stepComponent.IncrementalStaticBroadphase,
-                stepComponent.Gravity, state.LastSystemVersion);
+            state.Dependency = JobHandle.CombineDependencies(buildPhysicsData.m_InputDependencyToComplete, state.Dependency);
+
+            state.Dependency = PhysicsWorldBuilder.SchedulePhysicsWorldBuild(ref state, ref buildPhysicsData.PhysicsData, state.Dependency, timeStep,
+                stepComponent.CollisionTolerance, stepComponent.MultiThreaded > 0, stepComponent.IncrementalDynamicBroadphase,
+                stepComponent.IncrementalStaticBroadphase, stepComponent.Gravity, state.LastSystemVersion);
 
             SystemAPI.SetSingleton(new PhysicsWorldSingleton
             {
                 PhysicsWorld = buildPhysicsData.PhysicsData.PhysicsWorld,
-                PhysicsWorldIndex = buildPhysicsData.WorldFilter
+                PhysicsWorldIndex = buildPhysicsData.WorldFilter,
             });
         }
     }
@@ -196,14 +189,14 @@ namespace Unity.Physics.Systems
     [RequireMatchingQueriesForUpdate]
     [UpdateInGroup(typeof(FixedStepSimulationSystemGroup), OrderFirst = true)]
     [UpdateBefore(typeof(BeginFixedStepSimulationEntityCommandBufferSystem))]
-    partial struct InjectTemporalCoherenceDataSystem : ISystem
+    internal partial struct InjectTemporalCoherenceDataSystem : ISystem
     {
         private TemporalCoherenceUtilities.Queries m_Queries;
 
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
-            m_Queries = TemporalCoherenceUtilities.CreateQueries(ref state);
+            this.m_Queries = TemporalCoherenceUtilities.CreateQueries(ref state);
 
             state.RequireForUpdate<BeginFixedStepSimulationEntityCommandBufferSystem.Singleton>();
         }
@@ -217,12 +210,10 @@ namespace Unity.Physics.Systems
             }
 
             // add temporal coherence data if incremental broadphase is used
-            if ((physicsStep.IncrementalDynamicBroadphase || physicsStep.IncrementalStaticBroadphase) &&
-                !m_Queries.IsEmpty)
+            if ((physicsStep.IncrementalDynamicBroadphase || physicsStep.IncrementalStaticBroadphase) && !this.m_Queries.IsEmpty)
             {
-                var ecb = SystemAPI.GetSingleton<BeginFixedStepSimulationEntityCommandBufferSystem.Singleton>()
-                    .CreateCommandBuffer(state.WorldUnmanaged);
-                TemporalCoherenceUtilities.AddTemporalCoherenceComponents(ref m_Queries, ref ecb);
+                var ecb = SystemAPI.GetSingleton<BeginFixedStepSimulationEntityCommandBufferSystem.Singleton>().CreateCommandBuffer(state.WorldUnmanaged);
+                TemporalCoherenceUtilities.AddTemporalCoherenceComponents(ref this.m_Queries, ref ecb);
             }
         }
     }
@@ -241,7 +232,7 @@ namespace Unity.Physics.Systems
     [RequireMatchingQueriesForUpdate]
     [UpdateInGroup(typeof(PhysicsBuildWorldGroup))]
     [UpdateBefore(typeof(BuildPhysicsWorld))]
-    partial struct InjectTemporalCoherenceDataLastResortSystem : ISystem, ISystemStartStop
+    internal partial struct InjectTemporalCoherenceDataLastResortSystem : ISystem, ISystemStartStop
     {
         private TemporalCoherenceUtilities.Queries m_Queries;
         private bool m_First;
@@ -249,20 +240,20 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
-            m_Queries = TemporalCoherenceUtilities.CreateQueries(ref state);
-            m_First = true;
+            this.m_Queries = TemporalCoherenceUtilities.CreateQueries(ref state);
+            this.m_First = true;
         }
 
         [BurstCompile]
         public void OnStartRunning(ref SystemState state)
         {
-            m_First = true;
+            this.m_First = true;
         }
 
         [BurstCompile]
         public void OnStopRunning(ref SystemState state)
         {
-            m_First = true;
+            this.m_First = true;
         }
 
         [BurstCompile]
@@ -274,22 +265,20 @@ namespace Unity.Physics.Systems
             }
 
             // add temporal coherence data if incremental broadphase is used
-            if ((physicsStep.IncrementalDynamicBroadphase || physicsStep.IncrementalStaticBroadphase) &&
-                !m_Queries.IsEmpty)
+            if ((physicsStep.IncrementalDynamicBroadphase || physicsStep.IncrementalStaticBroadphase) && !this.m_Queries.IsEmpty)
             {
-                if (m_First)
+                if (this.m_First)
                 {
-                    Debug.LogWarning(
-                        "InjectTemporalCoherenceDataLastResortSystem has to inject missing PhysicsTemporalCoherenceInfo " +
+                    Debug.LogWarning("InjectTemporalCoherenceDataLastResortSystem has to inject missing PhysicsTemporalCoherenceInfo " +
                         "or PhysicsTemporalCoherenceTag components on rigid body entities with enabled incremental broadphase. " +
                         "If you create rigid body entities following the start of the FixedStepSimulationSystemGroup, make sure they contain " +
                         "all components needed for incremental broadphase at creation time, or create them before the FixedStepSimulationSystemGroup.");
 
-                    m_First = false;
+                    this.m_First = false;
                 }
 
                 var ecb = new EntityCommandBuffer(Allocator.Temp);
-                TemporalCoherenceUtilities.AddTemporalCoherenceComponents(ref m_Queries, ref ecb);
+                TemporalCoherenceUtilities.AddTemporalCoherenceComponents(ref this.m_Queries, ref ecb);
                 ecb.Playback(state.EntityManager);
             }
         }
@@ -305,18 +294,18 @@ namespace Unity.Physics.Systems
     /// </summary>
     [RequireMatchingQueriesForUpdate]
     [UpdateInGroup(typeof(PhysicsBuildWorldGroup))]
-    partial struct InvalidatedTemporalCoherenceCleanupSystem : ISystem
+    internal partial struct InvalidatedTemporalCoherenceCleanupSystem : ISystem
     {
-        EntityQuery m_InvalidatedTemporalCoherenceCleanupGroup;
+        private EntityQuery m_InvalidatedTemporalCoherenceCleanupGroup;
 
         [BurstCompile]
-        partial struct InvalidatedTemporalCoherenceCleanupJob : IJobEntity
+        private partial struct InvalidatedTemporalCoherenceCleanupJob : IJobEntity
         {
             public EntityCommandBuffer.ParallelWriter ECB;
 
-            void Execute(in Entity entity, [ChunkIndexInQuery] int chunkIndex)
+            private void Execute(in Entity entity, [ChunkIndexInQuery] int chunkIndex)
             {
-                ECB.RemoveComponent<PhysicsTemporalCoherenceInfo>(chunkIndex, entity);
+                this.ECB.RemoveComponent<PhysicsTemporalCoherenceInfo>(chunkIndex, entity);
             }
         }
 
@@ -325,28 +314,27 @@ namespace Unity.Physics.Systems
         {
             state.RequireForUpdate<EndFixedStepSimulationEntityCommandBufferSystem.Singleton>();
 
-            m_InvalidatedTemporalCoherenceCleanupGroup = new EntityQueryBuilder(Allocator.Temp)
+            this.m_InvalidatedTemporalCoherenceCleanupGroup = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<PhysicsTemporalCoherenceInfo>()
                 .WithAbsent<PhysicsTemporalCoherenceTag>()
                 .Build(ref state);
-            state.RequireForUpdate(m_InvalidatedTemporalCoherenceCleanupGroup);
+
+            state.RequireForUpdate(this.m_InvalidatedTemporalCoherenceCleanupGroup);
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            var ecb = SystemAPI.GetSingleton<EndFixedStepSimulationEntityCommandBufferSystem.Singleton>()
-                .CreateCommandBuffer(state.WorldUnmanaged);
+            var ecb = SystemAPI.GetSingleton<EndFixedStepSimulationEntityCommandBufferSystem.Singleton>().CreateCommandBuffer(state.WorldUnmanaged);
 
             state.Dependency = new InvalidatedTemporalCoherenceCleanupJob
             {
-                ECB = ecb.AsParallelWriter()
-            }.ScheduleParallel(m_InvalidatedTemporalCoherenceCleanupGroup, state.Dependency);
+                ECB = ecb.AsParallelWriter(),
+            }.ScheduleParallel(this.m_InvalidatedTemporalCoherenceCleanupGroup, state.Dependency);
         }
     }
 
-    #region Integrity checks
-
+#region Integrity checks
 #if (UNITY_EDITOR || DEVELOPMENT_BUILD) && !UNITY_PHYSICS_DISABLE_INTEGRITY_CHECKS
     /// <summary>
     /// Schedule check for integrity jobs in the Editor or in development build if the
@@ -382,8 +370,8 @@ namespace Unity.Physics.Systems
         {
             // these getter are not waiting for depedencies on the main thread, and that would avoid blocking for no
             // reason.
-            var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(m_BuildSystemHandle);
-            buildPhysicsData.IntegrityCheckMap.Clear();
+            var buildPhysicsData = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
+            state.Dependency = new ClearIntegrityCheckMapJob { IntegrityCheckMap = buildPhysicsData.IntegrityCheckMap }.Schedule(state.Dependency);
             // Should be un-necessary to update the handles at this point (there are no structural changes at this point)
             // has been added as extra safety measure.
             // buildPhysicsData.PhysicsData.ComponentHandles.Update(ref state);
@@ -399,6 +387,17 @@ namespace Unity.Physics.Systems
                 IntegrityCheckMap = buildPhysicsData.IntegrityCheckMap,
                 PhysicsColliderType = buildPhysicsData.PhysicsData.ComponentHandles.PhysicsColliderType
             }.Schedule(buildPhysicsData.PhysicsData.StaticEntityGroup, state.Dependency);;
+        }
+
+        [BurstCompile]
+        private struct ClearIntegrityCheckMapJob : IJob
+        {
+            public NativeParallelHashMap<uint, long> IntegrityCheckMap;
+
+            public void Execute()
+            {
+                this.IntegrityCheckMap.Clear();
+            }
         }
     }
 
@@ -466,11 +465,9 @@ namespace Unity.Physics.Systems
         }
     }
 #endif
+#endregion
 
-    #endregion
-
-    #region Analytics
-
+#region Analytics
 #if UNITY_EDITOR && ENABLE_CLOUD_SERVICES_ANALYTICS
     internal struct PhysicsAnalyticsSingleton : IComponentData
     {
@@ -498,25 +495,25 @@ namespace Unity.Physics.Systems
 
         public void Clear()
         {
-            m_SimulationType = SimulationType.NoPhysics;
-            m_MaxNumberOfStaticBodiesInAScene = 0;
-            m_MaxNumberOfDynamicBodiesInAScene = 0;
-            m_MaxNumberOfConvexesInAScene = 0;
-            m_MaxNumberOfSpheresInAScene = 0;
-            m_MaxNumberOfCapsulesInAScene = 0;
-            m_MaxNumberOfTrianglesInAScene = 0;
-            m_MaxNumberOfQuadsInAScene = 0;
-            m_MaxNumberOfBoxesInAScene = 0;
-            m_MaxNumberOfCylindersInAScene = 0;
-            m_MaxNumberOfMeshesInAScene = 0;
-            m_MaxNumberOfCompoundsInAScene = 0;
-            m_MaxNumberOfTerrainsInAScene = 0;
-            m_MaxNumberOfLinearConstraintsInAScene = 0;
-            m_MaxNumberOfAngularConstraintsInAScene = 0;
-            m_MaxNumberOfRotationMotorsInAScene = 0;
-            m_MaxNumberOfAngularVelocityMotorsInAScene = 0;
-            m_MaxNumberOfPositionMotorsInAScene = 0;
-            m_MaxNumberOfLinearVelocityMotorsInAScene = 0;
+            this.m_SimulationType = SimulationType.NoPhysics;
+            this.m_MaxNumberOfStaticBodiesInAScene = 0;
+            this.m_MaxNumberOfDynamicBodiesInAScene = 0;
+            this.m_MaxNumberOfConvexesInAScene = 0;
+            this.m_MaxNumberOfSpheresInAScene = 0;
+            this.m_MaxNumberOfCapsulesInAScene = 0;
+            this.m_MaxNumberOfTrianglesInAScene = 0;
+            this.m_MaxNumberOfQuadsInAScene = 0;
+            this.m_MaxNumberOfBoxesInAScene = 0;
+            this.m_MaxNumberOfCylindersInAScene = 0;
+            this.m_MaxNumberOfMeshesInAScene = 0;
+            this.m_MaxNumberOfCompoundsInAScene = 0;
+            this.m_MaxNumberOfTerrainsInAScene = 0;
+            this.m_MaxNumberOfLinearConstraintsInAScene = 0;
+            this.m_MaxNumberOfAngularConstraintsInAScene = 0;
+            this.m_MaxNumberOfRotationMotorsInAScene = 0;
+            this.m_MaxNumberOfAngularVelocityMotorsInAScene = 0;
+            this.m_MaxNumberOfPositionMotorsInAScene = 0;
+            this.m_MaxNumberOfLinearVelocityMotorsInAScene = 0;
         }
     }
 
@@ -525,16 +522,12 @@ namespace Unity.Physics.Systems
     [UpdateAfter(typeof(PhysicsBuildWorldGroup))]
     internal partial struct PhysicsAnalyticsSystem : ISystem
     {
-        SystemHandle m_BuildSystemHandle;
-
         public void OnCreate(ref SystemState state)
         {
             if (!EditorAnalytics.enabled)
             {
                 return;
             }
-
-            m_BuildSystemHandle = state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>();
 
             var physicsAnalyticsSingleton = new PhysicsAnalyticsSingleton();
             physicsAnalyticsSingleton.Clear();
@@ -560,28 +553,15 @@ namespace Unity.Physics.Systems
             var analyticsData = SystemAPI.GetSingletonRW<PhysicsAnalyticsSingleton>();
             analyticsData.ValueRW.m_SimulationType = stepComponent.SimulationType;
 
-            if (m_BuildSystemHandle == SystemHandle.Null)
-            {
-                return;
-            }
-            // else:
-
-            if (!state.EntityManager.HasComponent<BuildPhysicsWorldData>(m_BuildSystemHandle))
-            {
-                return;
-            }
-            // else:
-
-            var buildPhysicsData = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(m_BuildSystemHandle);
+            var buildPhysicsData = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
             var physicsWorld = buildPhysicsData.PhysicsData.PhysicsWorld;
 
             // store the max number of static and dynamic bodies in the scene
             analyticsData.ValueRW.m_MaxNumberOfStaticBodiesInAScene = math.max(
-                analyticsData.ValueRO.m_MaxNumberOfStaticBodiesInAScene,
-                (uint)physicsWorld.NumStaticBodies);
+                analyticsData.ValueRO.m_MaxNumberOfStaticBodiesInAScene, (uint)physicsWorld.NumStaticBodies);
+
             analyticsData.ValueRW.m_MaxNumberOfDynamicBodiesInAScene = math.max(
-                analyticsData.ValueRO.m_MaxNumberOfDynamicBodiesInAScene,
-                (uint)physicsWorld.NumDynamicBodies);
+                analyticsData.ValueRO.m_MaxNumberOfDynamicBodiesInAScene, (uint)physicsWorld.NumDynamicBodies);
 
             if (physicsWorld.NumJoints == 0 && physicsWorld.NumBodies <= 1)
             {
@@ -589,10 +569,11 @@ namespace Unity.Physics.Systems
             }
             // else:
 
-            int maxThreadCount = JobsUtility.ThreadIndexCount;
+            var maxThreadCount = JobsUtility.ThreadIndexCount;
 
             var rigidBodyAnalyticsData = CollectionHelper.CreateNativeArray<PhysicsAnalyticsSingleton>(maxThreadCount,
                 state.WorldUpdateAllocator, NativeArrayOptions.ClearMemory);
+
             var jointAnalyticsData = CollectionHelper.CreateNativeArray<PhysicsAnalyticsSingleton>(maxThreadCount,
                 state.WorldUpdateAllocator, NativeArrayOptions.ClearMemory);
 
@@ -602,7 +583,7 @@ namespace Unity.Physics.Systems
                 jointAnalyticsJob = new AnalyticsJobs.ParallelJointAnalyticsJob
                 {
                     JointAnalyticsData = jointAnalyticsData,
-                    Joints = physicsWorld.Joints
+                    Joints = physicsWorld.Joints,
                 }.Schedule(physicsWorld.NumJoints, 32, state.Dependency);
             }
 
@@ -613,7 +594,7 @@ namespace Unity.Physics.Systems
                 bodiesAnalyticsJob = new AnalyticsJobs.ParallelRigidBodyAnalyticsJob
                 {
                     RigidBodyAnalyticsData = rigidBodyAnalyticsData,
-                    RigidBodies = physicsWorld.Bodies
+                    RigidBodies = physicsWorld.Bodies,
                 }.Schedule(physicsWorld.NumBodies, 32, state.Dependency);
             }
 
@@ -633,16 +614,18 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         internal struct ParallelJointAnalyticsJob : IJobParallelFor
         {
-            [NativeSetThreadIndex] private int m_ThreadIndex;
+            [NativeSetThreadIndex]
+            private int m_ThreadIndex;
             [NativeDisableParallelForRestriction]
             public NativeArray<PhysicsAnalyticsSingleton> JointAnalyticsData;
-            [ReadOnly] public NativeArray<Joint> Joints;
+            [ReadOnly]
+            public NativeArray<Joint> Joints;
 
             public void Execute(int index)
             {
-                var data = JointAnalyticsData[m_ThreadIndex];
+                var data = this.JointAnalyticsData[this.m_ThreadIndex];
 
-                var joint = Joints[index];
+                var joint = this.Joints[index];
                 var constraints = joint.Constraints.GetConstraints();
 
                 foreach (var constraint in constraints)
@@ -670,28 +653,30 @@ namespace Unity.Physics.Systems
                     }
                 }
 
-                JointAnalyticsData[m_ThreadIndex] = data;
+                this.JointAnalyticsData[this.m_ThreadIndex] = data;
             }
         }
 
         [BurstCompile]
         internal struct ParallelRigidBodyAnalyticsJob : IJobParallelFor
         {
-            [NativeSetThreadIndex] private int m_ThreadIndex;
+            [NativeSetThreadIndex]
+            private int m_ThreadIndex;
             [NativeDisableParallelForRestriction]
             public NativeArray<PhysicsAnalyticsSingleton> RigidBodyAnalyticsData;
-            [ReadOnly] public NativeArray<RigidBody> RigidBodies;
+            [ReadOnly]
+            public NativeArray<RigidBody> RigidBodies;
 
             public void Execute(int index)
             {
-                var body = RigidBodies[index];
+                var body = this.RigidBodies[index];
                 if (!body.Collider.IsCreated)
                 {
                     return;
                 }
                 // else:
 
-                var data = RigidBodyAnalyticsData[m_ThreadIndex];
+                var data = this.RigidBodyAnalyticsData[this.m_ThreadIndex];
 
                 switch (body.Collider.Value.Type)
                 {
@@ -727,23 +712,26 @@ namespace Unity.Physics.Systems
                         break;
                 }
 
-                RigidBodyAnalyticsData[m_ThreadIndex] = data;
+                this.RigidBodyAnalyticsData[this.m_ThreadIndex] = data;
             }
         }
 
         [BurstCompile]
         internal struct FinalizePhysicsWorldAnalyticsJob : IJob
         {
-            [ReadOnly] public NativeArray<PhysicsAnalyticsSingleton> JointAnalyticsData;
-            [ReadOnly] public NativeArray<PhysicsAnalyticsSingleton> RigidBodyAnalyticsData;
-            [NativeDisableUnsafePtrRestriction] public RefRW<PhysicsAnalyticsSingleton> PhysicsAnalyticsSingleton;
+            [ReadOnly]
+            public NativeArray<PhysicsAnalyticsSingleton> JointAnalyticsData;
+            [ReadOnly]
+            public NativeArray<PhysicsAnalyticsSingleton> RigidBodyAnalyticsData;
+            [NativeDisableUnsafePtrRestriction]
+            public RefRW<PhysicsAnalyticsSingleton> PhysicsAnalyticsSingleton;
 
             public void Execute()
             {
                 PhysicsAnalyticsSingleton sumData = default;
 
                 // include rigid body data
-                foreach (var data in RigidBodyAnalyticsData)
+                foreach (var data in this.RigidBodyAnalyticsData)
                 {
                     // sum up the collected data from all threads
                     sumData.m_MaxNumberOfConvexesInAScene += data.m_MaxNumberOfConvexesInAScene;
@@ -759,7 +747,7 @@ namespace Unity.Physics.Systems
                 }
 
                 // include joint data
-                foreach (var data in JointAnalyticsData)
+                foreach (var data in this.JointAnalyticsData)
                 {
                     // sum up the collected data from all threads
                     sumData.m_MaxNumberOfLinearConstraintsInAScene += data.m_MaxNumberOfLinearConstraintsInAScene;
@@ -771,7 +759,7 @@ namespace Unity.Physics.Systems
                 }
 
                 // obtain the last known data record and update the maximum values:
-                var maxData = PhysicsAnalyticsSingleton.ValueRO;
+                var maxData = this.PhysicsAnalyticsSingleton.ValueRO;
 
                 // rigid body data
                 maxData.m_MaxNumberOfConvexesInAScene = math.max(maxData.m_MaxNumberOfConvexesInAScene, sumData.m_MaxNumberOfConvexesInAScene);
@@ -786,38 +774,48 @@ namespace Unity.Physics.Systems
                 maxData.m_MaxNumberOfTerrainsInAScene = math.max(maxData.m_MaxNumberOfTerrainsInAScene, sumData.m_MaxNumberOfTerrainsInAScene);
 
                 // joint data
-                maxData.m_MaxNumberOfLinearConstraintsInAScene = math.max(maxData.m_MaxNumberOfLinearConstraintsInAScene, sumData.m_MaxNumberOfLinearConstraintsInAScene);
-                maxData.m_MaxNumberOfAngularConstraintsInAScene = math.max(maxData.m_MaxNumberOfAngularConstraintsInAScene, sumData.m_MaxNumberOfAngularConstraintsInAScene);
-                maxData.m_MaxNumberOfRotationMotorsInAScene = math.max(maxData.m_MaxNumberOfRotationMotorsInAScene, sumData.m_MaxNumberOfRotationMotorsInAScene);
-                maxData.m_MaxNumberOfAngularVelocityMotorsInAScene = math.max(maxData.m_MaxNumberOfAngularVelocityMotorsInAScene, sumData.m_MaxNumberOfAngularVelocityMotorsInAScene);
-                maxData.m_MaxNumberOfPositionMotorsInAScene = math.max(maxData.m_MaxNumberOfPositionMotorsInAScene, sumData.m_MaxNumberOfPositionMotorsInAScene);
-                maxData.m_MaxNumberOfLinearVelocityMotorsInAScene = math.max(maxData.m_MaxNumberOfLinearVelocityMotorsInAScene, sumData.m_MaxNumberOfLinearVelocityMotorsInAScene);
+                maxData.m_MaxNumberOfLinearConstraintsInAScene =
+                    math.max(maxData.m_MaxNumberOfLinearConstraintsInAScene, sumData.m_MaxNumberOfLinearConstraintsInAScene);
+
+                maxData.m_MaxNumberOfAngularConstraintsInAScene =
+                    math.max(maxData.m_MaxNumberOfAngularConstraintsInAScene, sumData.m_MaxNumberOfAngularConstraintsInAScene);
+
+                maxData.m_MaxNumberOfRotationMotorsInAScene =
+                    math.max(maxData.m_MaxNumberOfRotationMotorsInAScene, sumData.m_MaxNumberOfRotationMotorsInAScene);
+
+                maxData.m_MaxNumberOfAngularVelocityMotorsInAScene = math.max(maxData.m_MaxNumberOfAngularVelocityMotorsInAScene,
+                    sumData.m_MaxNumberOfAngularVelocityMotorsInAScene);
+
+                maxData.m_MaxNumberOfPositionMotorsInAScene =
+                    math.max(maxData.m_MaxNumberOfPositionMotorsInAScene, sumData.m_MaxNumberOfPositionMotorsInAScene);
+
+                maxData.m_MaxNumberOfLinearVelocityMotorsInAScene = math.max(maxData.m_MaxNumberOfLinearVelocityMotorsInAScene,
+                    sumData.m_MaxNumberOfLinearVelocityMotorsInAScene);
 
                 // write the data back into the component
-                PhysicsAnalyticsSingleton.ValueRW = maxData;
+                this.PhysicsAnalyticsSingleton.ValueRW = maxData;
             }
         }
     }
 
 #endif //UNITY_EDITOR && ENABLE_CLOUD_SERVICES_ANALYTICS
+#endregion
 
-    #endregion
-
-    struct DummySimulationData : IComponentData
+    internal struct DummySimulationData : IComponentData
     {
-        byte dummyData; // Without data, the component is zero-sized, and accessing it will result in error
+        private byte dummyData; // Without data, the component is zero-sized, and accessing it will result in error
         internal DummySimulation m_Simulation;
 
         internal void DisableSystemChain(ref SystemState systemStateRef)
         {
             systemStateRef.Enabled = false;
-            m_Simulation.Dispose();
+            this.m_Simulation.Dispose();
         }
 
         internal void EnableSystemChain(ref SystemState systemStateRef)
         {
             systemStateRef.Enabled = true;
-            m_Simulation = new DummySimulation();
+            this.m_Simulation = new DummySimulation();
         }
     }
 
@@ -838,8 +836,7 @@ namespace Unity.Physics.Systems
         [BurstCompile]
         public void OnDestroy(ref SystemState state)
         {
-            state.EntityManager.GetComponentDataRW<DummySimulationData>(state.SystemHandle).ValueRW.m_Simulation
-                .Dispose();
+            state.EntityManager.GetComponentDataRW<DummySimulationData>(state.SystemHandle).ValueRW.m_Simulation.Dispose();
         }
 
         [BurstCompile]
