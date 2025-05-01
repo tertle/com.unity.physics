@@ -29,13 +29,14 @@ namespace Unity.Physics.GraphicsIntegration
     /// </summary>
     [RequireMatchingQueriesForUpdate]
     [UpdateInGroup(typeof(PhysicsSystemGroup))]
-    [UpdateAfter(typeof(PhysicsInitializeGroup)), UpdateBefore(typeof(ExportPhysicsWorld))]
+    [UpdateAfter(typeof(PhysicsInitializeGroup))]
+    [UpdateBefore(typeof(ExportPhysicsWorld))]
     [BurstCompile]
     public partial struct BufferInterpolatedRigidBodiesMotion : ISystem
     {
-        ComponentTypeHandle<LocalTransform> m_LocalTransformType;
-        ComponentTypeHandle<PhysicsVelocity> m_PhysicsVelocityType;
-        ComponentTypeHandle<PhysicsGraphicalInterpolationBuffer> m_InterpolationBufferType;
+        private ComponentTypeHandle<LocalTransform> m_LocalTransformType;
+        private ComponentTypeHandle<PhysicsVelocity> m_PhysicsVelocityType;
+        private ComponentTypeHandle<PhysicsGraphicalInterpolationBuffer> m_InterpolationBufferType;
 
         /// <summary>
         /// An entity query matching dynamic rigid bodies whose graphical motion should be interpolated.
@@ -44,16 +45,17 @@ namespace Unity.Physics.GraphicsIntegration
 
         public void OnCreate(ref SystemState state)
         {
-            InterpolatedDynamicBodiesQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<PhysicsVelocity, LocalTransform,PhysicsWorldIndex>()
+            this.InterpolatedDynamicBodiesQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<PhysicsVelocity, LocalTransform, PhysicsWorldIndex>()
                 .WithAllRW<PhysicsGraphicalInterpolationBuffer>()
                 .WithOptions(EntityQueryOptions.FilterWriteGroup)
                 .Build(ref state);
-            state.RequireForUpdate(InterpolatedDynamicBodiesQuery);
 
-            m_LocalTransformType = state.GetComponentTypeHandle<LocalTransform>(true);
-            m_PhysicsVelocityType = state.GetComponentTypeHandle<PhysicsVelocity>(true);
-            m_InterpolationBufferType = state.GetComponentTypeHandle<PhysicsGraphicalInterpolationBuffer>();
+            state.RequireForUpdate(this.InterpolatedDynamicBodiesQuery);
+
+            this.m_LocalTransformType = state.GetComponentTypeHandle<LocalTransform>(true);
+            this.m_PhysicsVelocityType = state.GetComponentTypeHandle<PhysicsVelocity>(true);
+            this.m_InterpolationBufferType = state.GetComponentTypeHandle<PhysicsGraphicalInterpolationBuffer>();
 
             // UpdateInterpolationBuffersJob copies from specific byte offsets of the transform components, so
             // let's make sure the offsets haven't changed!
@@ -65,17 +67,17 @@ namespace Unity.Physics.GraphicsIntegration
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            var bpwd = state.EntityManager.GetComponentData<BuildPhysicsWorldData>(state.WorldUnmanaged.GetExistingUnmanagedSystem<BuildPhysicsWorld>());
-            InterpolatedDynamicBodiesQuery.SetSharedComponentFilter(bpwd.WorldFilter);
-            m_LocalTransformType.Update(ref state);
-            m_PhysicsVelocityType.Update(ref state);
-            m_InterpolationBufferType.Update(ref state);
+            var bpwd = SystemAPI.GetSingleton<BuildPhysicsWorldData>();
+            this.InterpolatedDynamicBodiesQuery.SetSharedComponentFilter(bpwd.WorldFilter);
+            this.m_LocalTransformType.Update(ref state);
+            this.m_PhysicsVelocityType.Update(ref state);
+            this.m_InterpolationBufferType.Update(ref state);
             state.Dependency = new UpdateInterpolationBuffersJob
             {
-                LocalTransformType = m_LocalTransformType,
-                PhysicsVelocityType = m_PhysicsVelocityType,
-                InterpolationBufferType = m_InterpolationBufferType
-            }.ScheduleParallel(InterpolatedDynamicBodiesQuery, state.Dependency);
+                LocalTransformType = this.m_LocalTransformType,
+                PhysicsVelocityType = this.m_PhysicsVelocityType,
+                InterpolationBufferType = this.m_InterpolationBufferType,
+            }.ScheduleParallel(this.InterpolatedDynamicBodiesQuery, state.Dependency);
         }
 
         /// <summary>
@@ -87,10 +89,12 @@ namespace Unity.Physics.GraphicsIntegration
         public struct UpdateInterpolationBuffersJob : IJobChunk
         {
             /// <summary>   Physics velocity component type handle. (Readonly) </summary>
-            [ReadOnly] public ComponentTypeHandle<PhysicsVelocity> PhysicsVelocityType;
+            [ReadOnly]
+            public ComponentTypeHandle<PhysicsVelocity> PhysicsVelocityType;
 
             /// <summary>   Transform component type handle. (Readonly) </summary>
-            [ReadOnly] public ComponentTypeHandle<LocalTransform> LocalTransformType;
+            [ReadOnly]
+            public ComponentTypeHandle<LocalTransform> LocalTransformType;
 
             /// <summary>   PhysicsGraphicalInterpolationBuffer component type handle.. </summary>
             public ComponentTypeHandle<PhysicsGraphicalInterpolationBuffer> InterpolationBufferType;
@@ -98,15 +102,14 @@ namespace Unity.Physics.GraphicsIntegration
             public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask, in v128 chunkEnabledMask)
             {
                 Assert.IsFalse(useEnabledMask);
-                NativeArray<PhysicsVelocity> physicsVelocities = chunk.GetNativeArray(ref PhysicsVelocityType);
+                var physicsVelocities = chunk.GetNativeArray(ref this.PhysicsVelocityType);
 
-                NativeArray<LocalTransform> localTransforms = chunk.GetNativeArray(ref LocalTransformType);
+                var localTransforms = chunk.GetNativeArray(ref this.LocalTransformType);
 
-                NativeArray<PhysicsGraphicalInterpolationBuffer> interpolationBuffers = chunk.GetNativeArray(ref InterpolationBufferType);
+                var interpolationBuffers = chunk.GetNativeArray(ref this.InterpolationBufferType);
 
                 unsafe
                 {
-
                     var srcTransforms = localTransforms.GetUnsafeReadOnlyPtr();
 
                     var dst = interpolationBuffers.GetUnsafePtr();
@@ -121,29 +124,16 @@ namespace Unity.Physics.GraphicsIntegration
                     var sizeVelocity = UnsafeUtility.SizeOf<PhysicsVelocity>();
 
                     // These hardcoded byte offsets into LocalTransform are validated in OnCreate()
-                    int srcPositionOffset = 0;
-                    int srcOrientationOffset = sizePosition + UnsafeUtility.SizeOf<float>();
+                    var srcPositionOffset = 0;
+                    var srcOrientationOffset = sizePosition + UnsafeUtility.SizeOf<float>();
                     var srcPositions = (void*)((long)localTransforms.GetUnsafeReadOnlyPtr() + srcPositionOffset);
                     var srcOrientations = (void*)((long)localTransforms.GetUnsafeReadOnlyPtr() + srcOrientationOffset);
                     var dstOrientations = dst;
                     var dstPositions = (void*)((long)dst + sizeOrientation);
                     var dstVelocities = (void*)((long)dst + sizeOrientation + sizePosition);
-                    UnsafeUtility.MemCpyStride(
-                        dstOrientations, sizeBuffer,
-                        srcOrientations, sizeTransform,
-                        sizeOrientation, count
-                    );
-                    UnsafeUtility.MemCpyStride(
-                        dstPositions, sizeBuffer,
-                        srcPositions, sizeTransform,
-                        sizePosition, count
-                    );
-                    UnsafeUtility.MemCpyStride(
-                        dstVelocities, sizeBuffer,
-                        physicsVelocities.GetUnsafeReadOnlyPtr(), sizeVelocity,
-                        sizeVelocity, count
-                    );
-
+                    UnsafeUtility.MemCpyStride(dstOrientations, sizeBuffer, srcOrientations, sizeTransform, sizeOrientation, count);
+                    UnsafeUtility.MemCpyStride(dstPositions, sizeBuffer, srcPositions, sizeTransform, sizePosition, count);
+                    UnsafeUtility.MemCpyStride(dstVelocities, sizeBuffer, physicsVelocities.GetUnsafeReadOnlyPtr(), sizeVelocity, sizeVelocity, count);
                 }
             }
         }

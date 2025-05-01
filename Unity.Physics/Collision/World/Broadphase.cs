@@ -438,10 +438,9 @@ namespace Unity.Physics
             }.Schedule(staticVsDynamicNodePairIndices, 1, JobHandle.CombineDependencies(staticVsDynamicPairs, staticConstruct));
 
             // Dispose node pair lists
-            var disposeOverlapPairs0 = dynamicVsDynamicNodePairIndices.Dispose(dynamicVsDynamicHandle);
-            var disposeOverlapPairs1 = staticVsDynamicNodePairIndices.Dispose(staticVsDynamicHandle);
+            dynamicVsDynamicNodePairIndices.Dispose(dynamicVsDynamicHandle);
+            staticVsDynamicNodePairIndices.Dispose(staticVsDynamicHandle);
 
-            returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(disposeOverlapPairs0, disposeOverlapPairs1);
             returnHandles.FinalExecutionHandle = JobHandle.CombineDependencies(dynamicVsDynamicHandle, staticVsDynamicHandle);
 
             return returnHandles;
