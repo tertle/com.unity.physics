@@ -276,7 +276,7 @@ namespace Unity.Physics.Authoring
                 Orientation = bakeToShape.rotation
             };
 
-            geometry.Size = math.abs(shape.size * (float3)bakeToShape.lossyScale);
+            geometry.Size = math.abs((float3)shape.size * (float3)bakeToShape.lossyScale);
 
             // Note: set bevel radius to a reasonable value, ensuring it can not collapse to a quad, while considering the uniform scale of the baked rigid body which will be applied to the collider at runtime.
             geometry.BevelRadius = math.min(ConvexHullGenerationParameters.Default.BevelRadius / bodyUniformScale, math.cmin(geometry.Size) * 0.1f);
