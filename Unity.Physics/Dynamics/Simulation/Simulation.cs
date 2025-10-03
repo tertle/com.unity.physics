@@ -258,11 +258,6 @@ namespace Unity.Physics
         /// <value> The final simulation job handle. </value>
         public JobHandle FinalSimulationJobHandle => m_StepHandles.FinalExecutionHandle;
 
-        /// <summary>   Gets the handle of the final job. </summary>
-        ///
-        /// <value> The final job handle. </value>
-        public JobHandle FinalJobHandle => JobHandle.CombineDependencies(FinalSimulationJobHandle, m_StepHandles.FinalDisposeHandle);
-
         internal SimulationScheduleStage m_SimulationScheduleStage;
 
         internal StepContext StepContext;
@@ -479,7 +474,6 @@ namespace Unity.Physics
                 out NativeStream dynamicVsDynamicBodyPairs, out NativeStream dynamicVsStaticBodyPairs,
                 handle, multiThreaded, incrementalDynamicBroadphase, incrementalStaticBroadphase);
             handle = handles.FinalExecutionHandle;
-            var disposeHandle = handles.FinalDisposeHandle;
             var postOverlapsHandle = handle;
 
             // Sort all overlapping and jointed body pairs into phases
@@ -489,7 +483,6 @@ namespace Unity.Physics
 
             StepContext.CreatePhasedDispatchPairsJobHandle = handles.FinalExecutionHandle;
 
-            m_StepHandles.FinalDisposeHandle = JobHandle.CombineDependencies(handles.FinalDisposeHandle, disposeHandle);
             m_StepHandles.FinalExecutionHandle = multiThreaded ?
                 JobHandle.CombineDependencies(handles.FinalExecutionHandle, postOverlapsHandle) : handles.FinalExecutionHandle;
 
@@ -515,7 +508,6 @@ namespace Unity.Physics
                 return m_StepHandles;
             }
 
-            var disposeHandle = m_StepHandles.FinalDisposeHandle;
             if (input.NumSubsteps <= 1)
             {
                 // Integrate gravity so Jacobian Build is using same source data as Jacobian Solve
@@ -542,8 +534,6 @@ namespace Unity.Physics
                 var copyHandle = copyInputVelocities.Dispose(m_StepHandles.FinalExecutionHandle);
                 m_StepHandles.FinalExecutionHandle = JobHandle.CombineDependencies(copyHandle, m_StepHandles.FinalExecutionHandle);
             }
-
-            m_StepHandles.FinalDisposeHandle = JobHandle.CombineDependencies(disposeHandle, m_StepHandles.FinalDisposeHandle);
 
             return m_StepHandles;
         }
@@ -575,11 +565,9 @@ namespace Unity.Physics
             }
 
             // Create/Initialize Jacobians for first substep
-            var disposeHandle = m_StepHandles.FinalDisposeHandle;
             m_StepHandles = Solver.ScheduleBuildJacobiansJobs(ref input.World, input.SubstepTimeStep, math.length(input.Gravity),
                 input.NumSubsteps, input.NumSolverIterations, inputDeps, ref StepContext.PhasedDispatchPairs,
                 ref StepContext.SolverSchedulerInfo, ref StepContext.Contacts, ref StepContext.Jacobians, multiThreaded);
-            m_StepHandles.FinalDisposeHandle = JobHandle.CombineDependencies(disposeHandle, m_StepHandles.FinalDisposeHandle);
 
             return m_StepHandles;
         }
@@ -611,7 +599,6 @@ namespace Unity.Physics
             }
 
             var executionHandle = m_StepHandles.FinalExecutionHandle;
-            var disposeHandle = m_StepHandles.FinalDisposeHandle;
             var jobHandle = inputDeps;
             Solver.StabilizationData solverStabilizationData = new Solver.StabilizationData(input, SimulationContext);
 
@@ -674,9 +661,6 @@ namespace Unity.Physics
                 jobHandle = Integrator.ScheduleIntegrateJobs(ref input.World.DynamicsWorld,
                     input.SubstepTimeStep, m_StepHandles.FinalExecutionHandle, multiThreaded);
 
-                m_StepHandles.FinalDisposeHandle =
-                    JobHandle.CombineDependencies(disposeHandle, m_StepHandles.FinalDisposeHandle);
-
                 jobHandle = JobHandle.CombineDependencies(jobHandle, executionHandle, m_StepHandles.FinalExecutionHandle);
 
                 if (stepInput.IsLastSubstep)
@@ -698,11 +682,11 @@ namespace Unity.Physics
             if (!multiThreaded)
             {
                 // Note: In the multithreaded case, StepContext.PhasedDispatchPairs is disposed in Solver.ScheduleBuildJacobiansJobs().
-                m_StepHandles.FinalDisposeHandle = StepContext.PhasedDispatchPairs.Dispose(m_StepHandles.FinalExecutionHandle);
+                StepContext.PhasedDispatchPairs.Dispose(m_StepHandles.FinalExecutionHandle);
 
-                m_StepHandles.FinalDisposeHandle = StepContext.Contacts.Dispose(m_StepHandles.FinalDisposeHandle);
-                m_StepHandles.FinalDisposeHandle = StepContext.Jacobians.Dispose(m_StepHandles.FinalDisposeHandle);
-                m_StepHandles.FinalDisposeHandle = StepContext.SolverSchedulerInfo.ScheduleDisposeJob(m_StepHandles.FinalDisposeHandle);
+                StepContext.Contacts.Dispose(m_StepHandles.FinalExecutionHandle);
+                StepContext.Jacobians.Dispose(m_StepHandles.FinalExecutionHandle);
+                StepContext.SolverSchedulerInfo.ScheduleDisposeJob(m_StepHandles.FinalExecutionHandle);
             }
 
             return m_StepHandles;

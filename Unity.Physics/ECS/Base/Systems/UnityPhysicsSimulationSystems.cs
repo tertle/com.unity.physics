@@ -201,8 +201,7 @@ namespace Unity.Physics.Systems
             // Chain the previous frame's disposes before new frame can allocate.
             ref var broadphaseData = ref SystemAPI.GetSingletonRW<BroadphaseData>().ValueRW;
             state.Dependency = broadphaseData.m_UnityPhysicsSimulation.ScheduleBroadphaseJobsInternal(stepInput,
-                JobHandle.CombineDependencies(state.Dependency, broadphaseData.m_UnityPhysicsSimulation.m_StepHandles.FinalDisposeHandle),
-                multiThreaded, stepComponent.IncrementalDynamicBroadphase, stepComponent.IncrementalStaticBroadphase)
+                    state.Dependency, multiThreaded, stepComponent.IncrementalDynamicBroadphase, stepComponent.IncrementalStaticBroadphase)
                 .FinalExecutionHandle;
 
             SystemAPI.SetSingleton<StepInputSingleton>(new StepInputSingleton { StepInput = stepInput, MultiThreaded = multiThreaded });

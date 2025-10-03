@@ -209,9 +209,8 @@ namespace Unity.Physics
                 };
                 JobHandle handle = buildJob.ScheduleUnsafeIndex0(solverSchedulerInfo.NumWorkItems, 1, inputDeps);
 
-                returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(
-                    dispatchPairs.Dispose(handle),
-                    contacts.Dispose(handle));
+                dispatchPairs.Dispose(handle);
+                contacts.Dispose(handle);
 
                 returnHandles.FinalExecutionHandle = handle;
             }
@@ -927,19 +926,12 @@ namespace Unity.Physics
                             handle = stabilizeVelocitiesJob.Schedule(dynamicsWorld.NumMotions, 64, handle);
                         }
                     }
-
-                    returnHandles.FinalDisposeHandle = handle;
                 }
             }
 
             // Dispose processed data
-            if (stepInput.IsLastSubstep)
-            {
-                returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(
-                    jacobians.Dispose(handle),
-                    solverSchedulerInfo.ScheduleDisposeJob(handle),
-                    returnHandles.FinalDisposeHandle);
-            }
+            jacobians.Dispose(handle);
+            solverSchedulerInfo.ScheduleDisposeJob(handle);
             returnHandles.FinalExecutionHandle = handle;
 
             return returnHandles;
