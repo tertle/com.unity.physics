@@ -3,9 +3,9 @@
   "category": "Unity",
   "description": "Unity's C# stateless physics library.\n\nBuilt on top of the Unity C# ECS framework, Unity Physics is network-ready, completely customizable, and built for performance out of the box. Whether you're building the next mobile hit or a new networked multiplayer console experience, Unity Physics leverages the Burst compiler and Job system to scale across a range of hardware.",
   "dependencies": {
-    "com.unity.burst": "1.8.21",
-    "com.unity.collections": "2.6.0-pre.3",
-    "com.unity.entities": "1.4.0-pre.3",
+    "com.unity.burst": "1.8.23",
+    "com.unity.collections": "2.6.2",
+    "com.unity.entities": "1.4.2",
     "com.unity.mathematics": "1.3.2",
     "com.unity.test-framework": "1.4.6",
     "com.unity.modules.imgui": "1.0.0",
@@ -18,7 +18,7 @@
   "name": "com.unity.physics",
   "unity": "2022.3",
   "unityRelease": "20f1",
-  "version": "1.4.0-pre.3",
+  "version": "1.4.2",
   "samples": [
     {
       "displayName": "Custom Physics Authoring",
@@ -28,16 +28,16 @@
     }
   ],
   "_upm": {
-    "changelog": "### Changed\n\n* Updated Burst dependency to version 1.8.21\n* Updated the `com.unity.entities` dependency to version `1.4.0-pre.3`"
+    "changelog": "### Added\n\n* New maximum depenetration velocity properties in the `Physics Step Authoring` component allow controlling the maximum velocity with which intersecting rigid bodies separate. This can be useful in cases where contacts lead to deep intersections between colliders, consequently causing too aggressive, ejecting motions. The new `Max Dynamic Depenetration Velocity` and `Max Static Depenetration Velocity` properties control the maximum relative velocity that can be produced when separating intersecting dynamic rigid bodies, and the maximum relative velocity that can be produced when separating dynamic rigid bodies intersecting with static rigid bodies, respectively.\n\n### Changed\n\n* The maximum number of phases in the parallel constraint solver was increased from 16 to now 64, leading to significant speed-ups in parallel constraint processing by the `ParallelSolverJob` in situations where the body-constraint graph topology would have caused the graph coloring algorithm to run out of colors (phases). In the latter, all affected constraints were processed in serial at the end of each solver iteration by only a single job worker thread, thereby wasting significant computational resources and causing an unnecessary slowdown in every solver iteration. This is no longer the case with this change. The resultant performance improvement can be observed among others in the `Planet Gravity` sample scene in the `PhysicsSamples` project.\n* Updated Burst dependency to version 1.8.23"
   },
   "upmCi": {
-    "footprint": "40e8523c18b027f4b9dc44943390fbbcf92d8f75"
+    "footprint": "3391d4a9d0e995e6e383b93d774cf28b595b9ede"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.physics@1.4/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/dots.git",
     "type": "git",
-    "revision": "1d68bdee543beb5e992946669847cdae6fd48d36"
+    "revision": "34a49c9a68f70872c0a108dbef6cdea306d6b593"
   },
-  "_fingerprint": "3762b344ff4aa19f70544439c15310bafcac6b96"
+  "_fingerprint": "cde48e1c768c494f4a8201e97f259e0307a03562"
 }

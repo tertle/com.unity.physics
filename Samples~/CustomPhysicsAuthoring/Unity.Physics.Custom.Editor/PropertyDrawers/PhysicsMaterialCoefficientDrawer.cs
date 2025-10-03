@@ -1,4 +1,3 @@
-using System;
 using Unity.Physics.Authoring;
 using UnityEditor;
 using UnityEngine;

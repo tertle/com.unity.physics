@@ -40,6 +40,13 @@ namespace Unity.Physics.Editor
                 "collide normally and raise notifications of collision events with other shapes, " +
                 "or completely ignore collisions (but still move and intercept queries)."
             );
+
+            public static readonly GUIContent DetailedStaticMeshCollisionLabel = EditorGUIUtility.TrTextContent(
+               "Detailed Static Mesh Collision",
+               "When enabled, this option processes contact detection for dynamic objects colliding with static colliders " +
+               "across both the current and next frame. This helps predict and refine collision accuracy, reducing the " +
+               "likelihood of ghost collisions. Disable this if detailed precision is not required, as it may impact performance."
+           );
         }
 
         const string k_CollisionFilterGroupKey = "m_BelongsToCategories";
@@ -88,7 +95,7 @@ namespace Unity.Physics.Editor
             // m_CustomTags
             group = property.FindPropertyRelative(k_AdvancedGroupKey);
             if (group.isExpanded)
-                height += (EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing);
+                height += 2f * (EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing);
 
             // m_Template
             if (property.FindPropertyRelative("m_SupportsTemplate").boolValue)
@@ -201,6 +208,11 @@ namespace Unity.Physics.Editor
             if (advancedGroup.isExpanded)
             {
                 ++EditorGUI.indentLevel;
+
+                FindToggleAndValueProperties(property, templateValue, "m_DetailedStaticMeshCollision", out toggle, out var detailedStaticMeshCollision);
+                position.y = position.yMax + EditorGUIUtility.standardVerticalSpacing;
+                position.height = EditorGUIUtility.singleLineHeight;
+                DisplayOverridableProperty(position, Content.DetailedStaticMeshCollisionLabel, toggle, detailedStaticMeshCollision, templateAssigned);
 
                 FindToggleAndValueProperties(property, templateValue, "m_CustomMaterialTags", out toggle, out var customFlags);
                 position.y = position.yMax + EditorGUIUtility.standardVerticalSpacing;
