@@ -77,8 +77,6 @@ namespace Unity.Physics
     {
         /// <summary>   Final execution handle. Does not include dispose jobs. </summary>
         public JobHandle FinalExecutionHandle;
-        /// <summary>   Final handle. Includes dispose jobs </summary>
-        public JobHandle FinalDisposeHandle;
 
         /// <summary>   Constructor. </summary>
         ///
@@ -86,7 +84,6 @@ namespace Unity.Physics
         public SimulationJobHandles(JobHandle handle)
         {
             FinalExecutionHandle = handle;
-            FinalDisposeHandle = handle;
         }
     }
 
@@ -119,14 +116,6 @@ namespace Unity.Physics
         ///
         /// <value> The final simulation job handle. </value>
         JobHandle FinalSimulationJobHandle { get; }
-
-        /// <summary>
-        /// The final scheduled job, including all simulation and cleanup. The end of each step should
-        /// depend on this.
-        /// </summary>
-        ///
-        /// <value> The final job handle. </value>
-        JobHandle FinalJobHandle { get; }
     }
 
     // A simulation which does nothing
