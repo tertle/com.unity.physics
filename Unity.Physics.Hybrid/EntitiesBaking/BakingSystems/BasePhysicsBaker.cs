@@ -23,7 +23,7 @@ namespace Unity.Physics.Authoring
         public Unity.Entities.Hash128 Hash;
 
         /// <summary> Instance ID of the GameObject associated with the body </summary>
-        public int ConvertedBodyInstanceID;
+        public EntityId ConvertedBodyInstanceID;
 
         /// <summary> Indicates if a blob is associated to a collider </summary>
         public bool AssociateBlobToBody;

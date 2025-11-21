@@ -5,6 +5,8 @@ using Unity.Mathematics;
 
 namespace Unity.Physics.Authoring
 {
+    using UnityEngine;
+
     /// <summary>
     /// Marks a primary entity as a static root when building the compound colliders.
     /// </summary>
@@ -22,7 +24,7 @@ namespace Unity.Physics.Authoring
     struct BakeStaticRoot : IComponentData
     {
         public Entity Body;
-        public int ConvertedBodyInstanceID;
+        public EntityId ConvertedBodyInstanceID;
     }
 
     [BurstCompile]
