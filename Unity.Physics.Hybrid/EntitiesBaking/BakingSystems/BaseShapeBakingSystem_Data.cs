@@ -33,9 +33,9 @@ namespace Unity.Physics.Authoring
     // structure with minimal data needed to incrementally convert a shape that is possibly part of a compound collider
     struct ColliderInstanceBaking : IEquatable<ColliderInstanceBaking>
     {
-        public int AuthoringComponentId;
-        public int ConvertedAuthoringInstanceID; // Instance ID of the GameObject with the Collider
-        public int ConvertedBodyInstanceID;      // Instance ID of the GameObject with the body
+        public EntityId AuthoringComponentId;
+        public EntityId ConvertedAuthoringInstanceID; // Instance ID of the GameObject with the Collider
+        public EntityId ConvertedBodyInstanceID;      // Instance ID of the GameObject with the body
         public Entity BodyEntity;
         public Entity ShapeEntity;
         public Entity ChildEntity;
@@ -88,9 +88,9 @@ namespace Unity.Physics.Authoring
         {
             unchecked
             {
-                var hashCode = AuthoringComponentId;
-                hashCode = (hashCode * 397) ^ ConvertedAuthoringInstanceID;
-                hashCode = (hashCode * 397) ^ ConvertedBodyInstanceID;
+                var hashCode = AuthoringComponentId.GetHashCode();
+                hashCode = (hashCode * 397) ^ ConvertedAuthoringInstanceID.GetHashCode();
+                hashCode = (hashCode * 397) ^ ConvertedBodyInstanceID.GetHashCode();
                 hashCode = (hashCode * 397) ^ BodyEntity.GetHashCode();
                 hashCode = (hashCode * 397) ^ ShapeEntity.GetHashCode();
                 hashCode = (hashCode * 397) ^ BodyFromShape.GetHashCode();
