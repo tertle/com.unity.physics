@@ -13,7 +13,7 @@ namespace Unity.Physics.Editor
     /// </summary>
     static class ComponentVersionUpgrader
     {
-        [MenuItem("Tools/Unity Physics/Upgrade Force Unique Collider Versions")]
+        [MenuItem("Edit/Physics/Upgrade Force Unique Collider Versions")]
         static void UpgradeAssetsWithForceUniqueCollider()
         {
             UpgradeAssets<Authoring.ForceUniqueColliderAuthoring>("Force Unique Collider");
