@@ -13,6 +13,8 @@ namespace Unity.Physics
         public float3 AxisInMotionA;
         public float Target;   // in rad/s
 
+        public RigidTransform WorldFromA;
+
         // Index of the limited axis
         public int AxisIndex;
 
@@ -50,6 +52,7 @@ namespace Unity.Physics
 
         public void Update(in MotionData motionA, in MotionData motionB)
         {
+            WorldFromA = motionA.WorldFromMotion;
             MotionBFromA = math.mul(math.inverse(motionB.WorldFromMotion.rot), motionA.WorldFromMotion.rot);
         }
 

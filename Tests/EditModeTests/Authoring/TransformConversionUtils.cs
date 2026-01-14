@@ -1,4 +1,3 @@
-using System.Linq;
 using NUnit.Framework;
 using Unity.Collections;
 using Unity.Entities;
@@ -31,12 +30,39 @@ namespace Unity.Physics.Tests.Authoring
         )
             where T : unmanaged, IComponentData
         {
-            if (
-                returnData // i.e. value of post-conversion data will be asserted
-                && !query.All.Contains(ComponentType.ReadWrite<T>())
-                && !query.Any.Contains(ComponentType.ReadWrite<T>())
-            )
-                Assert.Fail($"{nameof(query)} must contain {ComponentType.ReadWrite<T>()} in order to trigger update of transform system");
+            if (returnData) // i.e. value of post-conversion data will be asserted
+            {
+                // Check if query contains ComponentType.ReadWrite<T>() in All or Any
+                bool foundInAll = false;
+                var componentType = ComponentType.ReadWrite<T>();
+                if (query.All != null)
+                {
+                    for (int i = 0; i < query.All.Length; i++)
+                    {
+                        if (query.All[i] == componentType)
+                        {
+                            foundInAll = true;
+                            break;
+                        }
+                    }
+                }
+
+                bool foundInAny = false;
+                if (query.Any != null)
+                {
+                    for (int i = 0; i < query.Any.Length; i++)
+                    {
+                        if (query.Any[i] == componentType)
+                        {
+                            foundInAny = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!foundInAll && !foundInAny)
+                    Assert.Fail($"{nameof(query)} must contain {componentType} in order to trigger update of transform system");
+            }
 
             var queryStr = query.ToReadableString();
 

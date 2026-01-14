@@ -45,28 +45,14 @@ namespace Unity.Physics.Authoring
             );
         }
 
-        public Entity CreateJointEntity(uint worldIndex, PhysicsConstrainedBodyPair constrainedBodyPair, PhysicsJoint joint)
+        public Entity CreateJointEntity(uint worldIndex, PhysicsConstrainedBodyPair constrainedBodyPair, SolverType solverType, PhysicsJoint joint)
         {
             using (var joints = new NativeArray<PhysicsJoint>(1, Allocator.Temp) { [0] = joint })
             using (var jointEntities = new NativeList<Entity>(1, Allocator.Temp))
             {
-                CreateJointEntities(worldIndex, constrainedBodyPair, joints, jointEntities);
+                CreateJointEntities(worldIndex, constrainedBodyPair, solverType, joints, jointEntities);
                 return jointEntities[0];
             }
-        }
-
-        public uint GetWorldIndex(Component c)
-        {
-            uint worldIndex = 0;
-            if (c)
-            {
-                var physicsBody = GetComponent<PhysicsBodyAuthoring>(c);
-                if (physicsBody != null)
-                {
-                    worldIndex = physicsBody.WorldIndex;
-                }
-            }
-            return worldIndex;
         }
 
         public uint GetWorldIndexFromBaseJoint(BaseJoint authoring)
@@ -87,7 +73,8 @@ namespace Unity.Physics.Authoring
             return worldIndex;
         }
 
-        public void CreateJointEntities(uint worldIndex, PhysicsConstrainedBodyPair constrainedBodyPair, NativeArray<PhysicsJoint> joints, NativeList<Entity> newJointEntities)
+        public void CreateJointEntities(uint worldIndex, PhysicsConstrainedBodyPair constrainedBodyPair, SolverType solverType,
+            NativeArray<PhysicsJoint> joints, NativeList<Entity> newJointEntities)
         {
             if (!joints.IsCreated || joints.Length == 0)
                 return;
@@ -108,6 +95,10 @@ namespace Unity.Physics.Authoring
 
                 AddComponent(jointEntity, constrainedBodyPair);
                 AddComponent(jointEntity, joints[i]);
+                AddComponent(jointEntity, new PhysicsSolverType
+                {
+                    Value = solverType
+                });
 
                 newJointEntities.Add(jointEntity);
 
@@ -149,7 +140,7 @@ namespace Unity.Physics.Authoring
             var constraintBodyPair = GetConstrainedBodyPair(authoring);
 
             uint worldIndex = GetWorldIndexFromBaseJoint(authoring);
-            CreateJointEntity(worldIndex, constraintBodyPair, physicsJoint);
+            CreateJointEntity(worldIndex, constraintBodyPair, authoring.SolverType, physicsJoint);
         }
     }
 }

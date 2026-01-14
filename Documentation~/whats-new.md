@@ -7,7 +7,6 @@ For a full list of changes, see the [Changelog](xref:unity-physics-changelog). F
 ## Added
 
 * **Motors**: For all 4 motor types, added a new field for the maximum impulse that the motor constraint can exert.
-* **Licence warning pop-up**: adding the `com.havok.physics` package in your project without the Unity Pro, Enterprise or Unity Industrial Collection license will prevent you from simulating Havok Physics in the editor and builds.
 * `[CreateBefore(typeof(BroadphaseSystem))]` for `PhysicsSimulationPickerSystem` within `UnityPhysicsSimulationSystems.cs` script file.
 * Reference to com.unity.render-pipelines.universal version 10.7
 * New shaders in the sampler that are SRP batcher and universal render pipeline compliant.

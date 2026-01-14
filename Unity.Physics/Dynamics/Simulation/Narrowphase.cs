@@ -1,31 +1,54 @@
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 
 namespace Unity.Physics
 {
     /// <summary>   Processes body pairs and creates contacts from them. </summary>
-    internal static class NarrowPhase
+    static class NarrowPhase
     {
         /// <summary>
         /// Iterates the provided dispatch pairs and creates contacts and based on them.
         /// </summary>
         ///
-        /// <param name="world">            [in,out] The world. </param>
-        /// <param name="inputVelocities"> [in] The velocity prediction at the end of the frame. </param>
-        /// <param name="dispatchPairs">    The dispatch pairs. </param>
-        /// <param name="timeStep">         The time step for the full frame. </param>
-        /// <param name="contactsWriter">   [in,out] The contacts writer. </param>
+        /// <param name="world">                [in,out] The world. </param>
+        /// <param name="inputVelocities">      [in] The velocity prediction at the end of the frame. </param>
+        /// <param name="dispatchPairs">        The dispatch pairs. </param>
+        /// <param name="solverSchedulerInfo">  The solver scheduler info. </param>
+        /// <param name="timeStep">             The time step for the full frame. </param>
+        /// <param name="contactsWriter">       [in,out] The contacts writer. </param>
         internal static void CreateContacts(ref PhysicsWorld world, NativeArray<Velocity> inputVelocities,
-            NativeArray<DispatchPairSequencer.DispatchPair> dispatchPairs, float timeStep,
+            NativeArray<DispatchPairSequencer.DispatchPair> dispatchPairs,
+            ref DispatchPairSequencer.SolverSchedulerInfo solverSchedulerInfo, float timeStep,
             ref NativeStream.Writer contactsWriter)
         {
-            contactsWriter.BeginForEachIndex(0);
+            // pure iterative pairs:
+            if (solverSchedulerInfo.IterativePairsIterativeScheduling.NumDispatchPairs.Value > 0)
+            {
+                ParallelCreateContactsJob.ExecuteImpl(ref world, inputVelocities, timeStep, dispatchPairs,
+                    solverSchedulerInfo.IterativePairsIterativeScheduling.FirstDispatchPairIndex.Value,
+                    solverSchedulerInfo.IterativePairsIterativeScheduling.NumDispatchPairs.Value, ref contactsWriter,
+                    solverSchedulerInfo.IterativePairsIterativeScheduling.FirstWorkItemIndex.Value);
+            }
 
-            ParallelCreateContactsJob.ExecuteImpl(ref world, inputVelocities, timeStep, dispatchPairs,
-                0, dispatchPairs.Length, ref contactsWriter);
+            // iterative coupling pairs:
+            if (solverSchedulerInfo.CouplingPairsIterativeScheduling.NumDispatchPairs.Value > 0)
+            {
+                ParallelCreateContactsJob.ExecuteImpl(ref world, inputVelocities, timeStep, dispatchPairs,
+                    solverSchedulerInfo.CouplingPairsIterativeScheduling.FirstDispatchPairIndex.Value,
+                    solverSchedulerInfo.CouplingPairsIterativeScheduling.NumDispatchPairs.Value, ref contactsWriter,
+                    solverSchedulerInfo.CouplingPairsIterativeScheduling.FirstWorkItemIndex.Value);
+            }
 
-            contactsWriter.EndForEachIndex();
+            // direct pairs:
+            if (solverSchedulerInfo.DirectPairsIterativeScheduling.NumDispatchPairs.Value > 0)
+            {
+                ParallelCreateContactsJob.ExecuteImpl(ref world, inputVelocities, timeStep, dispatchPairs,
+                    solverSchedulerInfo.DirectPairsIterativeScheduling.FirstDispatchPairIndex.Value,
+                    solverSchedulerInfo.DirectPairsIterativeScheduling.NumDispatchPairs.Value, ref contactsWriter,
+                    solverSchedulerInfo.DirectPairsIterativeScheduling.FirstWorkItemIndex.Value);
+            }
         }
 
         /// <summary>
@@ -51,26 +74,14 @@ namespace Unity.Physics
         {
             SimulationJobHandles returnHandles = default;
 
+            var numWorkItems = solverSchedulerInfo.NumIterativeWorkItems;
+            var contactsHandle = NativeStream.ScheduleConstruct(out contacts, numWorkItems, inputDeps, Allocator.TempJob);
+            var jacobiansHandle = NativeStream.ScheduleConstruct(out jacobians, numWorkItems, inputDeps, Allocator.TempJob);
+            var streamConstructionHandle = JobHandle.CombineDependencies(contactsHandle, jacobiansHandle);
+
             if (!multiThreaded)
             {
-                contacts = new NativeStream(1, Allocator.TempJob);
-                jacobians = new NativeStream(1, Allocator.TempJob);
                 returnHandles.FinalExecutionHandle = new CreateContactsJob
-                {
-                    World = world,
-                    InputVelocities = inputVelocities,
-                    TimeStep = timeStep,
-                    DispatchPairs = dispatchPairs.AsDeferredJobArray(),
-                    ContactsWriter = contacts.AsWriter()
-                }.Schedule(inputDeps);
-            }
-            else
-            {
-                var numWorkItems = solverSchedulerInfo.NumWorkItems;
-                var contactsHandle = NativeStream.ScheduleConstruct(out contacts, numWorkItems, inputDeps, Allocator.TempJob);
-                var jacobiansHandle = NativeStream.ScheduleConstruct(out jacobians, numWorkItems, inputDeps, Allocator.TempJob);
-
-                var processHandle = new ParallelCreateContactsJob
                 {
                     World = world,
                     InputVelocities = inputVelocities,
@@ -78,8 +89,42 @@ namespace Unity.Physics
                     DispatchPairs = dispatchPairs.AsDeferredJobArray(),
                     SolverSchedulerInfo = solverSchedulerInfo,
                     ContactsWriter = contacts.AsWriter()
-                }.ScheduleUnsafeIndex0(numWorkItems, 1, JobHandle.CombineDependencies(contactsHandle, jacobiansHandle));
-                returnHandles.FinalExecutionHandle = processHandle;
+                }.Schedule(streamConstructionHandle);
+            }
+            else
+            {
+                var createContactsJobIterative = new ParallelCreateContactsJob
+                {
+                    World = world,
+                    InputVelocities = inputVelocities,
+                    TimeStep = timeStep,
+                    DispatchPairs = dispatchPairs.AsDeferredJobArray(),
+                    IterativeSolverSchedulerInfo = solverSchedulerInfo.IterativePairsIterativeScheduling,
+                    ContactsWriter = contacts.AsWriter()
+                }.ScheduleUnsafeIndex0(solverSchedulerInfo.IterativePairsIterativeScheduling.NumWorkItems, 1, streamConstructionHandle);
+
+                var createContactsJobIterativeCoupling = new ParallelCreateContactsJob
+                {
+                    World = world,
+                    InputVelocities = inputVelocities,
+                    TimeStep = timeStep,
+                    DispatchPairs = dispatchPairs.AsDeferredJobArray(),
+                    IterativeSolverSchedulerInfo = solverSchedulerInfo.CouplingPairsIterativeScheduling,
+                    ContactsWriter = contacts.AsWriter()
+                }.ScheduleUnsafeIndex0(solverSchedulerInfo.CouplingPairsIterativeScheduling.NumWorkItems, 1, streamConstructionHandle);
+
+                var createContactsJobIterativeDirect = new ParallelCreateContactsJob
+                {
+                    World = world,
+                    InputVelocities = inputVelocities,
+                    TimeStep = timeStep,
+                    DispatchPairs = dispatchPairs.AsDeferredJobArray(),
+                    IterativeSolverSchedulerInfo = solverSchedulerInfo.DirectPairsIterativeScheduling,
+                    ContactsWriter = contacts.AsWriter()
+                }.ScheduleUnsafeIndex0(solverSchedulerInfo.DirectPairsIterativeScheduling.NumWorkItems, 1, streamConstructionHandle);
+
+                returnHandles.FinalExecutionHandle = JobHandle.CombineDependencies(createContactsJobIterative,
+                    createContactsJobIterativeCoupling, createContactsJobIterativeDirect);
             }
 
             return returnHandles;
@@ -93,28 +138,29 @@ namespace Unity.Physics
             [ReadOnly] public float TimeStep; //Full frame timestep
             [ReadOnly] public NativeArray<Velocity> InputVelocities;
             [ReadOnly] public NativeArray<DispatchPairSequencer.DispatchPair> DispatchPairs;
-            [NoAlias] public NativeStream.Writer ContactsWriter;
-            [NoAlias, ReadOnly] public DispatchPairSequencer.SolverSchedulerInfo SolverSchedulerInfo;
+            [NoAlias, NativeDisableContainerSafetyRestriction] public NativeStream.Writer ContactsWriter;
+            [NoAlias, ReadOnly] public DispatchPairSequencer.IterativeSolverSchedulerInfo IterativeSolverSchedulerInfo;
 
-            public unsafe void Execute(int workItemIndex)
+            public void Execute(int workItemIndexOffset)
             {
-                int dispatchPairReadOffset = SolverSchedulerInfo.GetWorkItemReadOffset(workItemIndex, out int numPairsToRead);
+                var firstDispatchPairIndex = IterativeSolverSchedulerInfo.FirstDispatchPairIndex.Value
+                    + IterativeSolverSchedulerInfo.GetWorkItemReadOffset(workItemIndexOffset, out int numPairsToRead);
+                var workItemIndex = IterativeSolverSchedulerInfo.FirstWorkItemIndex.Value + workItemIndexOffset;
 
-                ContactsWriter.BeginForEachIndex(workItemIndex);
-
-                ExecuteImpl(ref World, InputVelocities, TimeStep, DispatchPairs, dispatchPairReadOffset, numPairsToRead, ref ContactsWriter);
-
-                ContactsWriter.EndForEachIndex();
+                ExecuteImpl(ref World, InputVelocities, TimeStep, DispatchPairs, firstDispatchPairIndex, numPairsToRead,
+                    ref ContactsWriter, workItemIndex);
             }
 
-            // timestep needs to be for full frame
-            internal static unsafe void ExecuteImpl(ref PhysicsWorld world, NativeArray<Velocity> inputVelocities,
+            // Note: timestep needs to be for full frame
+            internal static void ExecuteImpl(ref PhysicsWorld world, NativeArray<Velocity> inputVelocities,
                 float timeStep, NativeArray<DispatchPairSequencer.DispatchPair> dispatchPairs,
-                int dispatchPairReadOffset, int numPairsToRead, ref NativeStream.Writer contactWriter)
+                int firstDispatchPairIndex, int numDispatchPairs, ref NativeStream.Writer contactWriter, int workItemIndex)
             {
-                for (int i = 0; i < numPairsToRead; i++)
+                contactWriter.BeginForEachIndex(workItemIndex);
+
+                for (int i = 0; i < numDispatchPairs; i++)
                 {
-                    DispatchPairSequencer.DispatchPair dispatchPair = dispatchPairs[dispatchPairReadOffset + i];
+                    DispatchPairSequencer.DispatchPair dispatchPair = dispatchPairs[firstDispatchPairIndex + i];
 
                     // Invalid pairs can exist by being disabled by users
                     if (dispatchPair.IsValid)
@@ -176,6 +222,8 @@ namespace Unity.Physics
                         }
                     }
                 }
+
+                contactWriter.EndForEachIndex();
             }
         }
 
@@ -187,11 +235,12 @@ namespace Unity.Physics
             [ReadOnly] public float TimeStep; //Full frame timestep
             [ReadOnly] public NativeArray<Velocity> InputVelocities;
             [ReadOnly] public NativeArray<DispatchPairSequencer.DispatchPair> DispatchPairs;
+            [ReadOnly] public DispatchPairSequencer.SolverSchedulerInfo SolverSchedulerInfo;
             [NoAlias] public NativeStream.Writer ContactsWriter;
 
             public void Execute()
             {
-                CreateContacts(ref World, InputVelocities, DispatchPairs, TimeStep, ref ContactsWriter);
+                CreateContacts(ref World, InputVelocities, DispatchPairs, ref SolverSchedulerInfo, TimeStep, ref ContactsWriter);
             }
         }
     }

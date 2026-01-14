@@ -15,6 +15,7 @@ namespace Unity.Physics.Tests.Authoring
             && !t.IsAbstract
             && !t.IsGenericType
             && (t.IsSubclassOf(typeof(ScriptableObject)) || t.IsSubclassOf(typeof(MonoBehaviour)))
+            && !t.IsSubclassOf(typeof(UnityEditor.Editor))
             && t.GetCustomAttributes().Count(a => a is ObsoleteAttribute) == 0
         );
 
@@ -22,7 +23,7 @@ namespace Unity.Physics.Tests.Authoring
         public void AuthoringType_HasProperlyFormattedHelpURL([ValueSource(nameof(AllAuthoringTypes))] Type type)
         {
             var attr = type.GetCustomAttribute(typeof(HelpURLAttribute)) as HelpURLAttribute;
-            Assume.That(attr, Is.Not.Null, "Public authoring type has no HelpURLAttribute");
+            Assert.That(attr, Is.Not.Null, "Public authoring type has no HelpURLAttribute");
 
             var url = attr.URL;
             Assert.That(url, Contains.Substring(type.FullName), "HelpURLAttribute does not reference proper type name");

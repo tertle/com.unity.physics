@@ -242,6 +242,24 @@ namespace Unity.Physics.Extensions
             bodyVelocity.Angular = angularVelocityInertiaSpace;
         }
 
+        /// <summary>   Gets linear kinetic energy of a rigid body. </summary>
+        ///
+        /// <param name="bodyVelocity">    [in,out] The body's <see cref="PhysicsVelocity"/> component. </param>
+        /// <param name="bodyMass">     The body's <see cref="PhysicsMass"/> component. </param>
+        /// <returns> The linear kinetic energy. </returns>
+        public static float GetLinearKineticEnergy(in this PhysicsVelocity bodyVelocity, in PhysicsMass bodyMass)
+            => math.select(0.5f * math.rcp(bodyMass.InverseMass) * math.dot(bodyVelocity.Linear, bodyVelocity.Linear),
+                math.select(0.0f, float.PositiveInfinity, math.any(bodyVelocity.Linear)), bodyMass.InverseMass == 0.0f);
+
+        /// <summary>   Gets angular kinetic energy of a rigid body. </summary>
+        ///
+        /// <param name="bodyVelocity">    [in,out] The body's <see cref="PhysicsVelocity"/> component. </param>
+        /// <param name="bodyMass">     The body's <see cref="PhysicsMass"/> component. </param>
+        /// <returns> The angular kinetic energy. </returns>
+        public static float GetAngularKineticEnergy(in this PhysicsVelocity bodyVelocity, in PhysicsMass bodyMass)
+            => math.select(0.5f * math.dot(bodyVelocity.Angular, math.rcp(bodyMass.InverseInertia) * bodyVelocity.Angular),
+                math.select(0.0f, float.PositiveInfinity, math.any(bodyVelocity.Angular)), bodyMass.HasInfiniteInertia);
+
         /// <summary>
         /// Converts a force into an impulse based on the force mode and the body's mass and inertia
         /// properties, and scale.

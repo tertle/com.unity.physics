@@ -2,8 +2,6 @@ using Unity.Entities;
 
 namespace Unity.Physics.Systems
 {
-#if !HAVOK_PHYSICS_EXISTS
-
     /// <summary>
     /// This abstract class can be used to create a system group for a custom physics world.
     /// To create a custom physics group, derive from this class and implement empty constructor
@@ -87,6 +85,4 @@ namespace Unity.Physics.Systems
             pickerSystemState.Enabled = true; // enable switching back in main world
         }
     }
-
-#endif
 }

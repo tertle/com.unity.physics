@@ -20,8 +20,6 @@ namespace Unity.Physics
         void Execute(TriggerEvent triggerEvent);
     }
 
-#if !HAVOK_PHYSICS_EXISTS
-
     /// <summary>
     /// Interface for jobs that iterate through the list of trigger events produced by the solver.
     /// </summary>
@@ -29,13 +27,9 @@ namespace Unity.Physics
     {
     }
 
-#endif
-
     /// <summary>   A trigger event job extensions. </summary>
     public static class ITriggerEventJobExtensions
     {
-#if !HAVOK_PHYSICS_EXISTS
-
         /// <summary>   Default Schedule() implementation for ITriggerEventsJob. </summary>
         ///
         /// <typeparam name="T">    Generic type parameter. </typeparam>
@@ -55,37 +49,6 @@ namespace Unity.Physics
 
             return ScheduleUnityPhysicsTriggerEventsJob(jobData, simulationSingleton.AsSimulation(), inputDeps);
         }
-
-#else
-
-        /// <summary>
-        /// In this case Schedule() implementation for ITriggerEventsJob is provided by the Havok.Physics
-        /// assembly.
-        ///  This is a stub to catch when that assembly is missing.
-        /// <todo.eoin.modifier Put in a link to documentation for this:
-        /// </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="jobData">              The jobData to act on. </param>
-        /// <param name="simulation">           The simulation. </param>
-        /// <param name="inputDeps">            The input deps. </param>
-        /// <param name="_causeCompileError">   (Optional) The cause compile error. </param>
-        ///
-        /// <returns>   A JobHandle. </returns>
-        [Obsolete("This error occurs when HAVOK_PHYSICS_EXISTS is defined but Havok.Physics is missing from your package's asmdef references. (DoNotRemove)", true)]
-        public static unsafe JobHandle Schedule<T>(this T jobData, ISimulation simulation, JobHandle inputDeps,
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF _causeCompileError = HAVOK_PHYSICS_MISSING_FROM_ASMDEF.HAVOK_PHYSICS_MISSING_FROM_ASMDEF)
-            where T : struct, ITriggerEventsJobBase
-        {
-            return new JobHandle();
-        }
-
-        /// <summary>   Values that represent havok physics missing from asmdefs. </summary>
-        public enum HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        {
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        }
-#endif
 
         // Schedules a trigger events job only for UnityPhysics simulation
         internal static unsafe JobHandle ScheduleUnityPhysicsTriggerEventsJob<T>(T jobData, Simulation simulation, JobHandle inputDeps)

@@ -41,6 +41,20 @@ namespace Unity.Physics.Authoring
         float3 m_Gravity = Default.Gravity;
 
         /// <summary>
+        ///     Enables simulation of gyroscopic torque which increases the realism of the simulation and
+        ///     enhances the stability of rotating dynamic bodies.
+        /// </summary>
+        public bool EnableGyroscopicTorque
+        {
+            get => m_EnableGyroscopicTorque;
+            set => m_EnableGyroscopicTorque = value;
+        }
+        [SerializeField]
+        [Tooltip("Enables simulation of gyroscopic torque which increases the realism of the simulation and enhances " +
+            "the stability of rotating dynamic bodies.")]
+        bool m_EnableGyroscopicTorque = Default.EnableGyroscopicTorque;
+
+        /// <summary>
         ///     Specifies the number of substep iterations the physics engine will perform.
         ///     Higher values mean more stability.
         /// </summary>
@@ -69,6 +83,18 @@ namespace Unity.Physics.Authoring
         [Tooltip("Specifies the number of solver iterations the physics engine will perform.\n" +
             "Higher values mean more stability, but also worse performance.")]
         int m_SolverIterationCount = Default.SolverIterationCount;
+
+        /// <summary>
+        ///     Direct solver settings.
+        /// </summary>
+        public Solver.DirectSolverSettings DirectSolverSettings
+        {
+            get => m_DirectSolverSettings;
+            set => m_DirectSolverSettings = value;
+        }
+        [SerializeField]
+        [Tooltip("The direct solver settings.")]
+        Solver.DirectSolverSettings m_DirectSolverSettings = Default.DirectSolverSettings;
 
         /// <summary>
         ///    Enables the contact solver stabilization heuristic.
@@ -180,8 +206,10 @@ namespace Unity.Physics.Authoring
         {
             SimulationType = SimulationType,
             Gravity = Gravity,
+            EnableGyroscopicTorque = EnableGyroscopicTorque,
             SubstepCount = SubstepCount,
             SolverIterationCount = SolverIterationCount,
+            DirectSolverSettings = DirectSolverSettings,
             SolverStabilizationHeuristicSettings = EnableSolverStabilizationHeuristic ?
                 new Solver.StabilizationHeuristicSettings
             {
@@ -197,7 +225,7 @@ namespace Unity.Physics.Authoring
             IncrementalDynamicBroadphase = IncrementalDynamicBroadphase,
             IncrementalStaticBroadphase = IncrementalStaticBroadphase,
             MaxDynamicDepenetrationVelocity = MaxDynamicDepenetrationVelocity,
-            MaxStaticDepenetrationVelocity = MaxStaticDepenetrationVelocity
+            MaxStaticDepenetrationVelocity = MaxStaticDepenetrationVelocity,
         };
 
         void OnValidate()

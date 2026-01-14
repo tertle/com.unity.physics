@@ -124,8 +124,8 @@ namespace Unity.Physics
         // Returns a non-normalized quaternion that approximates the change in angle angularVelocity * timestep.
         internal static quaternion IntegrateAngularVelocity(float3 angularVelocity, float timestep)
         {
-            float3 halfDeltaTime = new float3(timestep * 0.5f);
-            float3 halfDeltaAngle = angularVelocity * halfDeltaTime;
+            float halfDeltaTime = timestep * 0.5f;
+            float3 halfDeltaAngle = halfDeltaTime * angularVelocity;
             return new quaternion(new float4(halfDeltaAngle, 1.0f));
         }
     }

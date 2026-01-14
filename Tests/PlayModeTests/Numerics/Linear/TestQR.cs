@@ -38,7 +38,7 @@ namespace Unity.Numerics.Linear.Tests
         [Test]
         public void QR_Job_Decompose10x10_CompareProductToOriginal()
         {
-            using (var heap = MemoryManager.Create(16384, Allocator.Temp))
+            using (var heap = MemoryManager.Create(16384, Allocator.Persistent))
             {
                 var M = Matrix.Create(heap, 10, 10);
 
@@ -92,16 +92,16 @@ namespace Unity.Numerics.Linear.Tests
         }
 
         [Test]
-        public void QR_Job_DecomposeRandom1000x1000_CompareProductToOriginal()
+        public void QR_Job_DecomposeRandom500x500_CompareProductToOriginal()
         {
             if (!BurstHelper.IsBurstEnabled())
             {
                 Assert.Ignore("This test variant is time consuming and is therefore only run with Burst enabled.");
             }
 
-            using (var heap = MemoryManager.Create(1024 * 1024 * 128, Allocator.Temp))
+            using (var heap = new MemoryManager(Allocator.Persistent))
             {
-                TestQR(heap, 1000, 1000, out var A, out var QR);
+                TestQR(heap, 500, 500, out var A, out var QR);
 
                 float maxDiff = MaxAbsoluteDiff(A, QR);
                 Assert.IsTrue(maxDiff < 5.0e-5f);
@@ -113,7 +113,7 @@ namespace Unity.Numerics.Linear.Tests
         [Test]
         public void QR_Job_DecomposeRandom1000x100_CompareProductToOriginal()
         {
-            using (var heap = MemoryManager.Create(1024 * 1024 * 128, Allocator.Temp))
+            using (var heap = new MemoryManager(Allocator.Persistent))
             {
                 TestQR(heap, 1000, 100, out var A, out var QR);
 

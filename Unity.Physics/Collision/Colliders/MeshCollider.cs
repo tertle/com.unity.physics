@@ -413,10 +413,8 @@ namespace Unity.Physics
             }
         }
 
-        // Change when HAVOK-274 is implemented
         internal Material GetMaterial() => Mesh.Sections[0].Materials[0];
 
-        // Change when HAVOK-274 is implemented
         internal void SetMaterialField(Material material, Material.MaterialField option)
         {
             m_Header.Version++;

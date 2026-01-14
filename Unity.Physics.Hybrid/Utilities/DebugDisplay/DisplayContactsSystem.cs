@@ -1,11 +1,10 @@
-#if !HAVOK_PHYSICS_EXISTS
-
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
-using Unity.Jobs;
 using Unity.Mathematics;
+using Unity.Physics;
+using Unity.Physics.Authoring;
 using Unity.Physics.Systems;
 
 namespace Unity.Physics.Authoring
@@ -23,6 +22,8 @@ namespace Unity.Physics.Authoring
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<PhysicsDebugDisplayData>();
+            state.RequireForUpdate<PhysicsWorldSingleton>();
+            state.RequireForUpdate<SimulationSingleton>();
         }
 
         [BurstCompile]
@@ -30,22 +31,30 @@ namespace Unity.Physics.Authoring
         {
             if (!SystemAPI.TryGetSingleton(out PhysicsDebugDisplayData debugDisplay) || debugDisplay.DrawContacts == 0)
                 return;
+
+            if (!SystemAPI.TryGetSingleton(out DebugDraw draw))
+                return;
+
             var world = SystemAPI.GetSingleton<PhysicsWorldSingleton>().PhysicsWorld;
-            state.Dependency = new DisplayContactsJob {}.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), ref world, state.Dependency);
+            state.Dependency = new DisplayContactsJob
+            {
+                Draw = draw
+            }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), ref world, state.Dependency);
         }
 
         // Job which iterates over contacts from narrowphase and writes to display.
         [BurstCompile]
         private struct DisplayContactsJob : IContactsJob
         {
+            [ReadOnly][NativeDisableUnsafePtrRestriction] public DebugDraw Draw;
+
             public void Execute(ref ModifiableContactHeader header, ref ModifiableContactPoint point)
             {
                 float3 x0 = point.Position;
                 float3 x1 = header.Normal * point.Distance;
-                PhysicsDebugDisplaySystem.Arrow(x0, x1, Unity.DebugDisplay.ColorIndex.Green);
+                Draw.Arrow(x0, x1, Unity.DebugDisplay.ColorIndex.Green);
             }
         }
     }
 #endif
 }
-#endif

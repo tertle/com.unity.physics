@@ -243,8 +243,7 @@ namespace Unity.Physics
         }
 
         /// <summary>
-        /// A counter to keep track of changes to the joint's definition. Use it with back-ends like
-        /// Havok that cache information about the joint if its properties have not changed.
+        /// A counter to keep track of changes to the joint's definition.
         /// </summary>
         ///
         /// <value> The version. </value>

@@ -4,10 +4,11 @@ using Unity.Mathematics;
 namespace Unity.Physics.Authoring
 {
     /// <summary>
-    /// Custom physics Body Tags.
-    ///
+    /// <para>Custom physics Body Tags.</para>
+    /// <para>
     /// A lightweight type containing eight tags that can be individually toggled.
     /// Designed for tagging of rigid bodies.
+    /// </para>
     /// </summary>
     [Serializable]
     public struct CustomPhysicsBodyTags

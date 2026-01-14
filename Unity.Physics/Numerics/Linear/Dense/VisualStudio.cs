@@ -1,6 +1,6 @@
-using System.Linq;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using Unity.Mathematics;
 
 namespace Unity.Numerics.Linear.Dense.Primitives
@@ -33,11 +33,13 @@ namespace Unity.Numerics.Linear.Dense.Primitives
             get
             {
                 string s;
-                unsafe
+                var array = vector.ToArray();
+                var parts = new string[array.Length];
+                for (int i = 0; i < array.Length; i++)
                 {
-                    s = "covect([" + string.Join(",", vector.ToArray()
-                        .Select(f => f.ToString(CultureInfo.InvariantCulture))) + "])";
+                    parts[i] = array[i].ToString(CultureInfo.InvariantCulture);
                 }
+                s = "covect([" + string.Join(",", parts) + "])";
                 return s;
             }
         }
@@ -47,14 +49,15 @@ namespace Unity.Numerics.Linear.Dense.Primitives
             get
             {
                 var s = "[";
-                unsafe
+                var array = vector.ToArray();
+                for (int i = 0; i < array.Length; i++)
                 {
-                    s += vector
-                        .ToArray()
-                        .Select(f => f.ToString(CultureInfo.InvariantCulture))
-                        .Aggregate("", (acc, s) => acc + s + "; ");
-                    s = s.Substring(0, s.Length - 2) + "]";
-                } return s;
+                    s += array[i].ToString(CultureInfo.InvariantCulture) + "; ";
+                }
+                if (array.Length > 0)
+                    s = s.Substring(0, s.Length - 2);
+                s += "]";
+                return s;
             }
         }
     }
@@ -109,11 +112,15 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                 {
                     for (int i = 0; i < matrix.NumRows; i++)
                     {
-                        s += matrix.Rows[i]
-                            .ToArray()
-                            .Select(f => f.ToString(CultureInfo.InvariantCulture))
-                            .Aggregate("[", (acc, s) => acc + s + ",");
-                        s = s.Substring(0, s.Length - 1) + "], ";
+                        var array = matrix.Rows[i].ToArray();
+                        s += "[";
+                        for (int j = 0; j < array.Length; j++)
+                        {
+                            s += array[j].ToString(CultureInfo.InvariantCulture);
+                            if (j < array.Length - 1)
+                                s += ",";
+                        }
+                        s += "], ";
                     }
                 }
                 s = s.Substring(0, s.Length - 2) + ")";
@@ -130,14 +137,19 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                 {
                     for (int i = 0; i < matrix.NumRows; i++)
                     {
-                        s += matrix.Rows[i]
-                            .ToArray()
-                            .Select(f => f.ToString(CultureInfo.InvariantCulture))
-                            .Aggregate("", (acc, s) => acc + s + ",");
-                        s = s.Substring(0, s.Length - 1) + "; ";
+                        var array = matrix.Rows[i].ToArray();
+                        for (int j = 0; j < array.Length; j++)
+                        {
+                            s += array[j].ToString(CultureInfo.InvariantCulture);
+                            if (j < array.Length - 1)
+                                s += ",";
+                        }
+                        s += "; ";
                     }
                 }
-                s = s.Substring(0, s.Length - 2) + "]";
+                if (matrix.NumRows > 0)
+                    s = s.Substring(0, s.Length - 2);
+                s += "]";
                 return s;
             }
         }

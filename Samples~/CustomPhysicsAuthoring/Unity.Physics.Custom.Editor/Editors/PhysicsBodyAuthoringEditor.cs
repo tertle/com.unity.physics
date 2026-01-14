@@ -40,6 +40,7 @@ namespace Unity.Physics.Editor
         [AutoPopulate] SerializedProperty m_CenterOfMass;
         [AutoPopulate] SerializedProperty m_Orientation;
         [AutoPopulate] SerializedProperty m_InertiaTensor;
+        [AutoPopulate] SerializedProperty m_SolverType;
         [AutoPopulate] SerializedProperty m_WorldIndex;
         [AutoPopulate] SerializedProperty m_CustomTags;
         #pragma warning restore 649
@@ -92,6 +93,7 @@ namespace Unity.Physics.Editor
             if (showAdvanced)
             {
                 ++EditorGUI.indentLevel;
+                EditorGUILayout.PropertyField(m_SolverType);
                 EditorGUILayout.PropertyField(m_WorldIndex);
                 if (m_MotionType.intValue != (int)BodyMotionType.Static)
                 {

@@ -1,4 +1,3 @@
-using System.Linq;
 using NUnit.Framework;
 using Unity.Collections;
 using Unity.Numerics.Memory;
@@ -12,7 +11,7 @@ namespace Unity.Numerics.Linear.Tests
         [Test]
         public void TestCreateSubmatrix()
         {
-            using (var heap = MemoryManager.Create(16384, Allocator.Temp))
+            using (var heap = new MemoryManager(Allocator.Persistent))
             {
                 using (Matrix M = Matrix.Create(heap, 4, 6))
                 {
@@ -39,7 +38,18 @@ namespace Unity.Numerics.Linear.Tests
                             var subCol = M_RC.Cols[c].ToArray();
                             var fullCol = M.Cols[C[c]].ToArray();
                             var expectedSubCol = new float[] {fullCol[R[0]], fullCol[R[1]], fullCol[R[2]]};
-                            Assert.IsTrue(subCol.SequenceEqual(expectedSubCol));
+
+                            Assert.AreEqual(subCol.Length, expectedSubCol.Length);
+                            bool areEqual = true;
+                            for (int i = 0; i < subCol.Length; i++)
+                            {
+                                if (subCol[i] != expectedSubCol[i])
+                                {
+                                    areEqual = false;
+                                    break;
+                                }
+                            }
+                            Assert.IsTrue(areEqual);
                         }
                     }
                     finally

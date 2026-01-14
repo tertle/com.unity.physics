@@ -1,6 +1,5 @@
-#define TRACKED_ALLOCATIONS
-#define USE_MALLOC
-#define REPORT_STATS
+//#define TRACKED_ALLOCATIONS
+//#define REPORT_STATS
 
 using System;
 using System.Collections.Generic;
@@ -15,16 +14,26 @@ namespace Unity.Numerics.Memory
     [BurstCompile]
     internal unsafe partial struct MemoryManager : IDisposable
     {
-        public MemoryManager(long size, Collections.Allocator allocator)
+        public MemoryManager(Collections.Allocator allocator)
+            : this(0, allocator, useMemoryPool: false)
         {
-#if !USE_MALLOC
-            var obj = new Allocator(size, allocator);
-            info = (Allocator*)UnsafeUtility.Malloc(UnsafeUtility.SizeOf<Allocator>(), 1, allocator);
-            UnsafeUtility.CopyStructureToPtr(ref obj, info);
-#else
-            info = null;
-            this.allocator = allocator;
-#endif
+        }
+
+        public MemoryManager(long size, Collections.Allocator allocator, bool useMemoryPool = true)
+        {
+            if (useMemoryPool)
+            {
+                var obj = new Allocator(size, allocator);
+                info = (Allocator*)UnsafeUtility.Malloc(UnsafeUtility.SizeOf<Allocator>(), 1, allocator);
+                UnsafeUtility.CopyStructureToPtr(ref obj, info);
+                this.allocator = default;
+            }
+            else
+            {
+                info = null;
+                this.allocator = allocator;
+            }
+
             Valid = true;
         }
 
@@ -42,14 +51,15 @@ namespace Unity.Numerics.Memory
         [return : NoAlias]
         private void* Allocate(long size)
         {
-            //var threadId = Thread.CurrentThread.ManagedThreadId;
-
             if (size == 0)
                 return null;
 
-#if USE_MALLOC
-            return UnsafeUtility.Malloc(size, 16, allocator);
-#else
+            if (!UseMemoryPool)
+            {
+                return UnsafeUtility.Malloc(size, 16, allocator);
+            }
+            // else:
+
             var ptr = info->Allocate(size);
             if (ptr == null)
             {
@@ -59,7 +69,6 @@ namespace Unity.Numerics.Memory
             LeakTrace.AddTrace((IntPtr)ptr);
 #endif
             return ptr;
-#endif
         }
 
         public void Free(void* ptr)
@@ -67,22 +76,27 @@ namespace Unity.Numerics.Memory
             if (ptr == null)
                 return;
 
-#if USE_MALLOC
-            UnsafeUtility.Free(ptr, allocator);
-#else
-            info->Free(ptr);
+            if (!UseMemoryPool)
+            {
+                UnsafeUtility.Free(ptr, allocator);
+            }
+            else
+            {
+                info->Free(ptr);
 
 #if TRACKED_ALLOCATIONS
-            LeakTrace.RemoveTrace((IntPtr)ptr);
+                LeakTrace.RemoveTrace((IntPtr)ptr);
 #endif
-#endif
+            }
         }
 
         public void Dispose()
         {
-#if USE_MALLOC
-            return;
-#else
+            if (!UseMemoryPool)
+            {
+                return;
+            }
+            // else:
 
 #if REPORT_STATS
             string statsLog = $"Blocks remaining: {info->heap->UnsafeCount}\n" +
@@ -106,7 +120,6 @@ namespace Unity.Numerics.Memory
             UnsafeUtility.Free(info->memory, info->allocator);
             UnsafeUtility.Free(info, info->allocator);
             Valid = false;
-#endif
         }
 
         [DebuggerTypeProxy(typeof(MemoryManagerDebugView))]
@@ -119,9 +132,9 @@ namespace Unity.Numerics.Memory
 
         public bool Valid { get; private set; }
 
-#if USE_MALLOC
+        bool UseMemoryPool => info != null;
+
         readonly Collections.Allocator allocator;
-#endif
 
 #if TRACKED_ALLOCATIONS
         public struct LeakTrace

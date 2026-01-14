@@ -50,6 +50,7 @@ namespace Unity.Physics
             /// Tau.
             /// </summary>
             public const float Tau = 2.0f * math.PI;
+
             /// <summary>
             /// 1.0f / Tau.
             /// </summary>
@@ -102,7 +103,9 @@ namespace Unity.Physics
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static float RSqrtSafe(float v) => math.select(math.rsqrt(v), 0.0f, math.abs(v) < 1e-10f);
 
-        /// <summary>   Clamps the vector to to maximum length. </summary>
+        /// <summary>
+        /// Clamps the vector to to maximum length.
+        /// </summary>
         ///
         /// <param name="maxLength">    The maximum length. </param>
         /// <param name="vector">       [in,out] The vector to be clamped. </param>
@@ -119,7 +122,9 @@ namespace Unity.Physics
             }
         }
 
-        /// <summary>   Normalize and return the lenght of a vector. </summary>
+        /// <summary>
+        /// Normalize and return the length of a vector.
+        /// </summary>
         ///
         /// <param name="v">    A float3 to normalize. </param>
         /// <param name="n">    [out] A normalized float3. </param>
@@ -134,7 +139,9 @@ namespace Unity.Physics
             return lengthSq * invLength;
         }
 
-        /// <summary>   Check if 'v' is normalized. </summary>
+        /// <summary>
+        /// Check if 'v' is normalized.
+        /// </summary>
         ///
         /// <param name="v">    A float3 to check if normalized. </param>
         ///
@@ -153,7 +160,9 @@ namespace Unity.Physics
             return math.abs(a - b) < epsilon;
         }
 
-        /// <summary>   Return two normals perpendicular to the input vector. </summary>
+        /// <summary>
+        /// Return two normals perpendicular to the input vector.
+        /// </summary>
         ///
         /// <param name="v">    Input vector. </param>
         /// <param name="p">    [out] Normal 1. </param>
@@ -177,7 +186,9 @@ namespace Unity.Physics
             q = cross * invLength;
         }
 
-        /// <summary>   Calculate the eigenvectors and eigenvalues of a symmetric 3x3 matrix. </summary>
+        /// <summary>
+        /// Calculate the eigenvectors and eigenvalues of a symmetric 3x3 matrix.
+        /// </summary>
         ///
         /// <param name="a">            A float3x3 to process. </param>
         /// <param name="eigenVectors"> [out] The eigen vectors. </param>
@@ -289,7 +300,9 @@ namespace Unity.Physics
             return halfAngle + halfAngle;
         }
 
-        /// <summary>   Returns a quaternion q with q * from = to. </summary>
+        /// <summary>
+        /// Returns a quaternion q with q * from = to.
+        /// </summary>
         ///
         /// <param name="from"> From rotation. </param>
         /// <param name="to">   To rotation. </param>
@@ -506,7 +519,9 @@ namespace Unity.Physics
             return toEuler(q, order);
         }
 
-        /// <summary>   Checks if the matrix has non-uniform scale. </summary>
+        /// <summary>
+        /// Checks if the matrix has non-uniform scale.
+        /// </summary>
         /// <param name="m">    The matrix. </param>
         /// <param name="eps">  Epsilon value used in the non-uniform scale determination. </param>
         /// <returns>   True if the matrix has non-uniform scale. </returns>
@@ -534,7 +549,9 @@ namespace Unity.Physics
             return true; // nonUniformAxes == true
         }
 
-        /// <summary> Checks if the matrix has non-identity scale. </summary>
+        /// <summary>
+        /// Checks if the matrix has non-identity scale.
+        /// </summary>
         /// <param name="m">    The matrix. </param>
         /// <param name="eps">  Epsilon value used in the non-identity scale determination. </param>
         /// <returns>  True if the matrix has non-identity scale. </returns>
@@ -550,7 +567,9 @@ namespace Unity.Physics
             return math.lengthsq(signedScale - new float3(1f)) > eps;
         }
 
-        /// <summary>   Checks if the matrix has shear. </summary>
+        /// <summary>
+        /// Checks if the matrix has shear.
+        /// </summary>
         /// <param name="m">    The matrix. </param>
         /// <returns>   True if the matrix has shear. </returns>
         public static bool HasShear(this float4x4 m)

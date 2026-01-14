@@ -18,9 +18,6 @@ namespace Unity.Physics.Authoring
 
         PhysicsCategoryTags CollidesWith { get; set; }
 
-        // TODO: Enable Mass Factors?
-        // TODO: Surface Velocity?
-
         CustomPhysicsMaterialTags CustomTags { get; set; }
     }
 
@@ -84,7 +81,7 @@ namespace Unity.Physics.Authoring
     }
 
     [Serializable]
-    class OverridablePhysicsMaterialFlag : OverridableValue<PhysicsMaterialFlag> { }
+    class OverridablePhysicsMaterialFlag : OverridableValue<PhysicsMaterialFlag> {}
 
     [Serializable]
     class OverridableCategoryTags : OverridableValue<PhysicsCategoryTags> {}

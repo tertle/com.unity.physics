@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -161,11 +160,19 @@ namespace Unity.Physics.Editor
 
             HashUtility.Initialize();
 
-            m_NumImplicitStatic = targets.Cast<PhysicsShapeAuthoring>().Count(
-                shape => shape.GetPrimaryBody() == shape.gameObject
-                && shape.GetComponent<PhysicsBodyAuthoring>() == null
-                && shape.GetComponent<Rigidbody>() == null
-            );
+            int numImplicitStatic = 0;
+            foreach (var t in targets)
+            {
+                var shape = t as PhysicsShapeAuthoring;
+                if (shape && shape.GetPrimaryBody() == shape.gameObject
+                    && shape.GetComponent<PhysicsBodyAuthoring>() == null
+                    && shape.GetComponent<Rigidbody>() == null)
+                {
+                    numImplicitStatic++;
+                }
+            }
+
+            m_NumImplicitStatic = numImplicitStatic;
 
             Undo.undoRedoPerformed += Repaint;
         }
@@ -363,7 +370,7 @@ namespace Unity.Physics.Editor
             {
                 var repaintSceneViews = false;
 
-                foreach (var job in m_PreviewJobsOutput.Keys.ToArray()) // TODO: don't allocate on heap
+                foreach (var job in m_PreviewJobsOutput.Keys)
                 {
                     // repaint scene views to indicate progress if most recent preview job is still in the queue
                     var mostRecentlyScheduledJob = m_MostRecentlyScheduledJob.Equals(job);

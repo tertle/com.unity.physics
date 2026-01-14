@@ -2,12 +2,11 @@ using Unity.Assertions;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
-using Unity.Physics.Aspects;
 
 namespace Unity.Physics
 {
     /// <summary>   Interface for objects that can be hit by physics queries. </summary>
-    public interface ICollidable    // TODO: rename to Physics.IQueryable?
+    public interface ICollidable
     {
         // Bounding box
 
@@ -534,96 +533,6 @@ namespace Unity.Physics
         bool CapsuleCastCustom<T>(float3 point1, float3 point2, float radius, float3 direction, float maxDistance, ref T collector, CollisionFilter filter, QueryInteraction queryInteraction = QueryInteraction.Default) where T : struct, ICollector<ColliderCastHit>;
     }
 
-#pragma warning disable CS0618 // Disable Aspects obsolete warnings
-    /// <summary>   Interface for objects that can be hit by aspect queries. </summary>
-    public interface IAspectQueryable
-    {
-        /// <summary>   Cast the collider aspect against this <see cref="IAspectQueryable"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default);
-
-        /// <summary>   Cast the collider aspect against this <see cref="IAspectQueryable"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="closestHit">       [out] The closest hit. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, out ColliderCastHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default);
-
-        /// <summary>   Cast the collider aspect against this <see cref="IAspectQueryable"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="allHits">          [in,out] all hits. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, ref NativeList<ColliderCastHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default);
-
-        /// <summary>   Cast the collider aspect against this <see cref="IAspectQueryable"/>. </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="collector">        [in,out] The collector. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        bool CastCollider<T>(in ColliderAspect colliderAspect, float3 direction, float maxDistance, ref T collector, QueryInteraction queryInteraction = QueryInteraction.Default) where T : struct, ICollector<ColliderCastHit>;
-
-        /// <summary>   Calculates the distance from the collider aspect to this <see cref="IAspectQueryable"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default);
-
-        /// <summary>   Calculates the distance from the collider aspect to this <see cref="IAspectQueryable"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="closestHit">       [out] The closest hit. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, out DistanceHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default);
-
-        /// <summary>   Calculates the distance from the collider aspect to this <see cref="IAspectQueryable"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="allHits">          [in,out] all hits. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, ref NativeList<DistanceHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default);
-
-        /// <summary>   Calculates the distance from the collider aspect to this <see cref="IAspectQueryable"/>. </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="collector">        [in,out] The collector. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        bool CalculateDistance<T>(in ColliderAspect colliderAspect, float maxDistance, ref T collector, QueryInteraction queryInteraction = QueryInteraction.Default) where T : struct, ICollector<DistanceHit>;
-    }
-#pragma warning restore CS0618
-
     /// <summary>
     /// Used as a way to provide queries with more filtering options, without creating collectors At
     /// the moment, IgnoreTriggers is the only option that is supported.
@@ -854,7 +763,7 @@ namespace Unity.Physics
                     }
                     else
                     {
-                        var interactionCollector = new QueryInteractionCollector<DistanceHit, C>(ref collector, true, Entities.Entity.Null);
+                        var interactionCollector = new QueryInteractionCollector<DistanceHit, C>(ref collector, true);
                         return ptr->CalculateDistance(input, ref interactionCollector);
                     }
                 }
@@ -929,7 +838,7 @@ namespace Unity.Physics
                     }
                     else
                     {
-                        var interactionCollector = new QueryInteractionCollector<DistanceHit, C>(ref collector, true, Entities.Entity.Null);
+                        var interactionCollector = new QueryInteractionCollector<DistanceHit, C>(ref collector, true);
                         return ptr->CalculateDistance(input, ref interactionCollector);
                     }
                 }
@@ -1004,7 +913,7 @@ namespace Unity.Physics
                     }
                     else
                     {
-                        var interactionCollector = new QueryInteractionCollector<DistanceHit, C>(ref collector, true, Entities.Entity.Null);
+                        var interactionCollector = new QueryInteractionCollector<DistanceHit, C>(ref collector, true);
                         return ptr->CalculateDistance(input, ref interactionCollector);
                     }
                 }
@@ -1072,7 +981,7 @@ namespace Unity.Physics
                     }
                     else
                     {
-                        var interactionCollector = new QueryInteractionCollector<ColliderCastHit, C>(ref collector, true, Entities.Entity.Null);
+                        var interactionCollector = new QueryInteractionCollector<ColliderCastHit, C>(ref collector, true);
                         return ptr->CastCollider(input, ref interactionCollector);
                     }
                 }
@@ -1157,7 +1066,7 @@ namespace Unity.Physics
                     }
                     else
                     {
-                        var interactionCollector = new QueryInteractionCollector<ColliderCastHit, C>(ref collector, true, Entities.Entity.Null);
+                        var interactionCollector = new QueryInteractionCollector<ColliderCastHit, C>(ref collector, true);
                         return ptr->CastCollider(input, ref interactionCollector);
                     }
                 }
@@ -1243,7 +1152,7 @@ namespace Unity.Physics
                     }
                     else
                     {
-                        var interactionCollector = new QueryInteractionCollector<ColliderCastHit, C>(ref collector, true, Entities.Entity.Null);
+                        var interactionCollector = new QueryInteractionCollector<ColliderCastHit, C>(ref collector, true);
                         return ptr->CastCollider(input, ref interactionCollector);
                     }
                 }
@@ -1293,112 +1202,6 @@ namespace Unity.Physics
             }
         }
 
-        #endregion
-
-        #endregion
-
-        #region IAspectQueryable
-        #pragma warning disable CS0618 // Disable Aspects obsolete warnings
-
-        #region Collider cast
-
-        public static bool CastCollider<T>(in T target, ColliderAspect colliderAspect, float3 direction, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default)
-            where T : unmanaged, IAspectQueryable
-        {
-            AnyHitCollector<ColliderCastHit> anyHitCollector = new AnyHitCollector<ColliderCastHit>(1.0f);
-            unsafe
-            {
-                fixed(T* ptr = &target)
-                {
-                    return ptr->CastCollider(colliderAspect, direction, maxDistance, ref anyHitCollector, queryInteraction);
-                }
-            }
-        }
-
-        public static bool CastCollider<T>(in T target, ColliderAspect colliderAspect, float3 direction, float maxDistance, out ColliderCastHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default)
-            where T : unmanaged, IAspectQueryable
-        {
-            ClosestHitCollector<ColliderCastHit> closestHitCollector = new ClosestHitCollector<ColliderCastHit>(1.0f);
-            unsafe
-            {
-                fixed(T* ptr = &target)
-                {
-                    if (ptr->CastCollider(colliderAspect, direction, maxDistance, ref closestHitCollector, queryInteraction))
-                    {
-                        closestHit = closestHitCollector.ClosestHit;
-                        return true;
-                    }
-                }
-            }
-
-            closestHit = new ColliderCastHit();
-            return false;
-        }
-
-        public static bool CastCollider<T>(in T target, ColliderAspect colliderAspect, float3 direction, float maxDistance, ref NativeList<ColliderCastHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default)
-            where T : unmanaged, IAspectQueryable
-        {
-            AllHitsCollector<ColliderCastHit> allHitsCollector = new AllHitsCollector<ColliderCastHit>(1.0f, ref allHits);
-            unsafe
-            {
-                fixed(T* ptr = &target)
-                {
-                    return ptr->CastCollider(colliderAspect, direction, maxDistance, ref allHitsCollector, queryInteraction);
-                }
-            }
-        }
-
-        #endregion
-
-        #region Collider distance
-
-        public static bool CalculateDistance<T>(in T target, ColliderAspect colliderAspect, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default)
-            where T : unmanaged, IAspectQueryable
-        {
-            AnyHitCollector<DistanceHit> anyHitCollector = new AnyHitCollector<DistanceHit>(maxDistance);
-            unsafe
-            {
-                fixed(T* ptr = &target)
-                {
-                    return ptr->CalculateDistance(colliderAspect, maxDistance, ref anyHitCollector, queryInteraction);
-                }
-            }
-        }
-
-        public static bool CalculateDistance<T>(in T target, ColliderAspect colliderAspect, float maxDistance, out DistanceHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default)
-            where T : unmanaged, IAspectQueryable
-        {
-            ClosestHitCollector<DistanceHit> closestHitCollector = new ClosestHitCollector<DistanceHit>(maxDistance);
-            unsafe
-            {
-                fixed(T* ptr = &target)
-                {
-                    if (ptr->CalculateDistance(colliderAspect, maxDistance, ref closestHitCollector, queryInteraction))
-                    {
-                        closestHit = closestHitCollector.ClosestHit;
-                        return true;
-                    }
-                }
-            }
-
-            closestHit = new DistanceHit();
-            return false;
-        }
-
-        public static bool CalculateDistance<T>(in T target, ColliderAspect colliderAspect, float maxDistance, ref NativeList<DistanceHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default)
-            where T : unmanaged, IAspectQueryable
-        {
-            AllHitsCollector<DistanceHit> allHitsCollector = new AllHitsCollector<DistanceHit>(maxDistance, ref allHits);
-            unsafe
-            {
-                fixed(T* ptr = &target)
-                {
-                    return ptr->CalculateDistance(colliderAspect, maxDistance, ref allHitsCollector, queryInteraction);
-                }
-            }
-        }
-
-        #pragma warning restore CS0618
         #endregion
 
         #endregion

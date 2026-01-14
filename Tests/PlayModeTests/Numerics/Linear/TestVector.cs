@@ -18,7 +18,7 @@ namespace Unity.Numerics.Linear.Tests
         [Test]
         public void TestCreateSubvector()
         {
-            using (var heap = MemoryManager.Create(16384, Allocator.Temp))
+            using (var heap = new MemoryManager(Allocator.Persistent))
             {
                 var idx1 = new NativeArray<int>(4, Allocator.Temp);
                 idx1.CopyFrom(new int[] {0, 1, 3, 9});

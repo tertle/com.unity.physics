@@ -162,7 +162,7 @@ namespace Unity.Physics
             // Allocate collider
             int totalSize = UnsafeUtility.SizeOf<ConvexCollider>();
             totalSize += tempHull.Vertices.Length * sizeof(float3);
-            totalSize = Math.NextMultipleOf16(totalSize);  // planes currently must be aligned for Havok
+            totalSize = Math.NextMultipleOf16(totalSize);
             totalSize += tempHull.Planes.Length * sizeof(Plane);
             totalSize += tempHull.Faces.Length * sizeof(ConvexHull.Face);
             totalSize += tempHull.FaceVertexIndices.Length * sizeof(byte);
@@ -195,7 +195,7 @@ namespace Unity.Physics
                     hull.VerticesBlob.Length = tempHull.Vertices.Length;
                     end += sizeof(float3) * tempHull.Vertices.Length;
 
-                    end = (byte*)Math.NextMultipleOf16((ulong)end); // planes currently must be aligned for Havok
+                    end = (byte*)Math.NextMultipleOf16((ulong)end);
 
                     hull.FacePlanesBlob.Offset = UnsafeEx.CalculateOffset(end, ref hull.FacePlanesBlob);
                     hull.FacePlanesBlob.Length = tempHull.Planes.Length;

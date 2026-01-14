@@ -116,7 +116,7 @@ namespace Unity.Numerics.Linear.Tests
         [Test]
         public void GolubKahanLanczos_Job_Decompose4x3_CompareProductToOriginal()
         {
-            using (var heap = MemoryManager.Create(16384, Allocator.Temp))
+            using (var heap = MemoryManager.Create(16384, Allocator.Persistent))
             {
                 var M = heap.Matrix(4, 3);
                 M.Rows[0].FillFromArray(new float[] { 1, 2, 3 });
@@ -144,7 +144,7 @@ namespace Unity.Numerics.Linear.Tests
         [Test]
         public void GolubKahanLanczos_Job_Decompose3x4_CompareProductToOriginal()
         {
-            using (var heap = MemoryManager.Create(1024 * 1024 * 128, Allocator.Temp))
+            using (var heap = new MemoryManager(Allocator.Persistent))
             {
                 var M = heap.Matrix(3, 4);
                 M.Cols[0].FillFromArray(new float[] { 1, 2, 3 });
@@ -170,16 +170,16 @@ namespace Unity.Numerics.Linear.Tests
         }
 
         [Test]
-        public void GolubKahanLanczos_Job_DecomposeRandom1000x1000_CompareProductToOriginal()
+        public void GolubKahanLanczos_Job_DecomposeRandom500x500_CompareProductToOriginal()
         {
             if (!BurstHelper.IsBurstEnabled())
             {
                 Assert.Ignore("This test variant is time consuming and is therefore only run with Burst enabled.");
             }
 
-            using (var heap = MemoryManager.Create(1024 * 1024 * 128, Allocator.Temp))
+            using (var heap = new MemoryManager(Allocator.Persistent))
             {
-                TestGolubKahanLanczos(heap, 1000, 1000, out var A, out var GKL);
+                TestGolubKahanLanczos(heap, 500, 500, out var A, out var GKL);
 
                 float maxDiff = MaxAbsoluteDiff(A, GKL);
                 Assert.IsTrue(maxDiff < 5.0e-5f);

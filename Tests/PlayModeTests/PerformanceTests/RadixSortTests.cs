@@ -26,26 +26,24 @@ namespace Unity.Physics.Tests.PerformanceTests
             return castedArray;
         }
 
-        public static void InitPairs(int minIndex, int maxIndex, int count, NativeArray<ulong> pairs)
+        public static void InitPairs(int minIndex, int maxIndex, int count, NativeArray<DispatchPairSequencer.DispatchPair> pairs)
         {
             Random.InitState(1234);
 
             for (var i = 0; i < pairs.Length; ++i)
             {
-                ulong indexA = (ulong)Random.Range(minIndex, maxIndex);
-                ulong indexB = (ulong)Random.Range(minIndex, maxIndex);
+                var indexA = Random.Range(minIndex, maxIndex);
+                var indexB = Random.Range(minIndex, maxIndex);
 
                 if (indexB == indexA)
                 {
-                    if (indexB < (ulong)maxIndex)
+                    if (indexB < maxIndex)
                     {
                         indexB++;
                     }
                 }
 
-                pairs[i] =
-                    indexA << DispatchPairSequencer.DispatchPair.k_BodyIndexAShift |
-                    indexB << DispatchPairSequencer.DispatchPair.k_BodyIndexBShift;
+                pairs[i] = DispatchPairSequencer.DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(indexA, indexB));
             }
         }
 
@@ -59,26 +57,18 @@ namespace Unity.Physics.Tests.PerformanceTests
         public void PerfRadixPassOnBodyA(int count)
         {
             int maxBodyIndex = (int)math.pow(count, 0.7f);
-            int numDigits = 0;
-            int val = maxBodyIndex;
-            while (val > 0)
-            {
-                val >>= 1;
-                numDigits++;
-            }
 
-            var pairs = new NativeArray<ulong>(count, Allocator.TempJob);
-            var sortedPairs = new NativeArray<ulong>(count, Allocator.TempJob);
+            var pairs = new NativeArray<DispatchPairSequencer.DispatchPair>(count, Allocator.TempJob);
+            var sortedPairs = new NativeArray<DispatchPairSequencer.DispatchPair>(count, Allocator.TempJob);
             var tempCount = new NativeArray<int>(maxBodyIndex + 1, Allocator.TempJob);
 
             InitPairs(1, maxBodyIndex, count, pairs);
 
             var job = new DispatchPairSequencer.RadixSortPerBodyAJob
             {
-                InputArray = ReinterpretCast<ulong, DispatchPairSequencer.DispatchPair>(pairs),
-                OutputArray = ReinterpretCast<ulong, DispatchPairSequencer.DispatchPair>(sortedPairs),
-                DigitCount = tempCount,
-                MaxDigits = numDigits,
+                InputArray = pairs,
+                OutputArray = sortedPairs,
+                BodyIndexHistogram = tempCount,
                 MaxIndex = maxBodyIndex
             };
 
@@ -89,13 +79,11 @@ namespace Unity.Physics.Tests.PerformanceTests
                 .MeasurementCount(1)
                 .Run();
 
-            // All bits associated with the BodyA index
-            ulong mask = ~DispatchPairSequencer.DispatchPair.k_BodyAMask;
-
             for (int i = 0; i < count - 1; i++)
             {
-                Assert.IsTrue((sortedPairs[i] & mask) <= (sortedPairs[i + 1] & mask),
-                    $"Not sorted for index {i}, sortedPairs[i]= {sortedPairs[i]}, sortedPairs[i+1]= {sortedPairs[i + 1]}");
+                Assert.IsTrue((sortedPairs[i].BodyIndexA) <= (sortedPairs[i + 1].BodyIndexA),
+                    $"Not sorted for index {i}, sortedPairs[i].BodyIndexA= {sortedPairs[i].BodyIndexA}," +
+                    $"sortedPairs[i+1].BodyIndexA= {sortedPairs[i + 1].BodyIndexA}");
             }
 
             // Dispose all allocated data.
@@ -114,28 +102,20 @@ namespace Unity.Physics.Tests.PerformanceTests
         public unsafe void PerfDefaultSortOnSubarrays(int count)
         {
             int maxBodyIndex = (int)math.pow(count, 0.7f);
-            int numDigits = 0;
-            int val = maxBodyIndex;
-            while (val > 0)
-            {
-                val >>= 1;
-                numDigits++;
-            }
 
-            var pairs = new NativeArray<ulong>(count, Allocator.TempJob);
-            var sortedPairs = new NativeArray<ulong>(count, Allocator.TempJob);
+            var pairs = new NativeArray<DispatchPairSequencer.DispatchPair>(count, Allocator.TempJob);
+            var sortedPairs = new NativeArray<DispatchPairSequencer.DispatchPair>(count, Allocator.TempJob);
 
             InitPairs(1, maxBodyIndex, count, pairs);
 
             // Do a single pass of radix sort on bodyA only.
             var tempCount = new NativeArray<int>(maxBodyIndex + 1, Allocator.TempJob);
-            DispatchPairSequencer.RadixSortPerBodyAJob.RadixSortPerBodyA(
-                (ulong*)pairs.GetUnsafePtr(), (ulong*)sortedPairs.GetUnsafePtr(),
-                pairs.Length, tempCount, numDigits, maxBodyIndex, DispatchPairSequencer.DispatchPair.k_BodyIndexAShift);
+            DispatchPairSequencer.RadixSortPerBodyAJob.RadixSortPerBodyA(pairs, sortedPairs,
+                tempCount, maxBodyIndex);
 
             var job = new DispatchPairSequencer.SortSubArraysJob
             {
-                InOutArray = ReinterpretCast<ulong, DispatchPairSequencer.DispatchPair>(sortedPairs),
+                InOutArray = sortedPairs,
                 NextElementIndex = tempCount
             };
 
@@ -147,12 +127,11 @@ namespace Unity.Physics.Tests.PerformanceTests
                 .Run();
 
             // Mask all bits NOT associated with the BodyA index
-            ulong mask = DispatchPairSequencer.DispatchPair.k_BodyAMask;
 
             for (int i = 0; i < count - 1; i++)
             {
-                Assert.IsTrue((sortedPairs[i] & mask) < (sortedPairs[i + 1] & mask) ||
-                    (sortedPairs[i] <= sortedPairs[i + 1]),
+                Assert.IsTrue((sortedPairs[i].BodyIndexA) < (sortedPairs[i + 1].BodyIndexA) ||
+                    (sortedPairs[i].BodyIndexASubArraySortKey <= sortedPairs[i + 1].BodyIndexASubArraySortKey),
                     $"Not sorted for index {i}, sortedPairs[i] = {sortedPairs[i]}, sortedPairs[i+1] = {sortedPairs[i + 1]}");
             }
 

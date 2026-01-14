@@ -164,30 +164,23 @@ namespace Unity.Physics.Authoring
 
             float3 bJointPosition = math.mul(bFromBSource, new float4(connectedAnchorPos, 1f)).xyz;
 #if UNITY_EDITOR
-            bool IsPrefabAsset = UnityEditor.PrefabUtility.GetPrefabAssetType(joint) != UnityEditor.PrefabAssetType.NotAPrefab &&
+            bool isPrefabAsset = UnityEditor.PrefabUtility.GetPrefabAssetType(joint) != UnityEditor.PrefabAssetType.NotAPrefab &&
                 UnityEditor.PrefabUtility.GetPrefabInstanceStatus(joint) == UnityEditor.PrefabInstanceStatus.NotAPrefab;
 
-            // This correction applies only to prefabs referenced by other Authoring/Baker scripts,
-            // which have not yet been instantiated in the scene. Since {joint.connectedAnchor}
+            // Manually compute the connected anchor position for prefab assets with autoConfigureConnectedAnchor enabled.
+            // Note: This applies only to prefabs being baked that are potentially referenced by other Authoring/Baker scripts,
+            // and which have not yet been instantiated in the world as entity prefab instances. Since {joint.connectedAnchor}
             // is not correctly initialized at this point, the Joint Position shown in the Inspector
             // may appear incorrect for these prefabs.
-            if (IsPrefabAsset && joint.autoConfigureConnectedAnchor)
+            if (isPrefabAsset && joint.autoConfigureConnectedAnchor)
             {
-                // Resolve the connected transform if one exists
-                Transform connectedTransform = null;
-                if (joint.connectedBody != null)
-                    connectedTransform = joint.connectedBody.transform;
-                else if (joint.connectedArticulationBody != null)
-                    connectedTransform = joint.connectedArticulationBody.transform;
+                var bodyATransform = new RigidTransform(joint.transform.rotation, joint.transform.position);
+                var bodyBTransform = joint.connectedBody ? new RigidTransform(joint.connectedBody.transform.rotation, joint.connectedBody.transform.position) : RigidTransform.identity;
 
-                // Correct the joint position to account for prefab initialization state
-                if (connectedTransform != null)
-                {
-                    float3 localPos = math.mul(math.inverse(joint.transform.rotation), connectedTransform.position - joint.transform.position);
-                    localPos -= anchorPos;
-                    localPos *= -1.0f; // Flip the result to match the expected local direction
-                    bJointPosition = localPos;
-                }
+                var anchorAWorld = math.transform(bodyATransform, anchorPos);
+                var anchorBLocal= math.transform(math.inverse(bodyBTransform), anchorAWorld);
+
+                bJointPosition = anchorBLocal;
             }
 #endif
 
@@ -358,21 +351,38 @@ namespace Unity.Physics.Authoring
 
         protected uint GetWorldIndex(UnityEngine.Component c)
         {
-            // World Indices are not supported in current built-in physics implementation, which makes it unavailable with legacy baking.
-            return 0;
+            uint worldIndex = 0; // default world index
+            var worldIndexComponent = GetComponent<PhysicsWorldIndexAuthoring>(c.gameObject);
+
+            if (worldIndexComponent != null)
+            {
+                worldIndex = worldIndexComponent.WorldIndex;
+            }
+
+            return worldIndex;
         }
 
-        protected Entity CreateJointEntity(uint worldIndex, PhysicsConstrainedBodyPair constrainedBodyPair, PhysicsJoint joint)
+        protected SolverType GetSolverType(UnityEngine.Component c)
+        {
+            var solverTypeAuthoring = c.gameObject.GetComponent<SolverTypeAuthoring>();
+            if (solverTypeAuthoring != null && solverTypeAuthoring.enabled)
+            {
+                return solverTypeAuthoring.SolverType;
+            }
+            return SolverType.Iterative;
+        }
+
+        protected Entity CreateJointEntity(uint worldIndex, PhysicsConstrainedBodyPair constrainedBodyPair, SolverType solverType, PhysicsJoint joint)
         {
             using (var joints = new NativeArray<PhysicsJoint>(1, Allocator.Temp) { [0] = joint })
             using (var jointEntities = new NativeList<Entity>(1, Allocator.Temp))
             {
-                CreateJointEntities(worldIndex, constrainedBodyPair, joints, jointEntities);
+                CreateJointEntities(worldIndex, constrainedBodyPair, solverType, joints, jointEntities);
                 return jointEntities[0];
             }
         }
 
-        protected void CreateJointEntities(uint worldIndex, PhysicsConstrainedBodyPair constrainedBodyPair, NativeArray<PhysicsJoint> joints, NativeList<Entity> newJointEntities = default)
+        protected void CreateJointEntities(uint worldIndex, PhysicsConstrainedBodyPair constrainedBodyPair, SolverType solverType, NativeArray<PhysicsJoint> joints, NativeList<Entity> newJointEntities = default)
         {
             if (!joints.IsCreated || joints.Length == 0)
                 return;
@@ -392,6 +402,10 @@ namespace Unity.Physics.Authoring
 
                 AddComponent(jointEntity, constrainedBodyPair);
                 AddComponent(jointEntity, joint);
+                AddComponent(jointEntity, new PhysicsSolverType
+                {
+                    Value = solverType
+                });
 
                 newJointEntities.Add(jointEntity);
             }
@@ -433,10 +447,12 @@ namespace Unity.Physics.Authoring
                 joint.swing1Limit, joint.swing2Limit, joint.swingLimitSpring);
 
             var worldIndex = GetWorldIndex(joint);
+            var solverType = GetSolverType(joint);
+
             using (var joints = new NativeArray<PhysicsJoint>(2, Allocator.Temp) { [0] = jointData.LinearJoint, [1] = jointData.AngularJoint })
             using (var jointEntities = new NativeList<Entity>(2, Allocator.Temp))
             {
-                CreateJointEntities(worldIndex, GetConstrainedBodyPair(joint), joints, jointEntities);
+                CreateJointEntities(worldIndex, GetConstrainedBodyPair(joint), solverType, joints, jointEntities);
             }
         }
 
@@ -480,7 +496,8 @@ namespace Unity.Physics.Authoring
                 );
 
                 uint worldIndex = GetWorldIndex(joint);
-                CreateJointEntity(worldIndex, GetConstrainedBodyPair(joint), thisJoint);
+                var solverType = GetSolverType(joint);
+                CreateJointEntity(worldIndex, GetConstrainedBodyPair(joint), solverType, thisJoint);
             }
         }
 
@@ -811,7 +828,9 @@ namespace Unity.Physics.Authoring
             jointData.SetImpulseEventThresholdAllConstraints(joint.breakForce * Time.fixedDeltaTime, joint.breakTorque * Time.fixedDeltaTime);
 
             var worldIndex = GetWorldIndex(joint);
-            Entity entity = CreateJointEntity(worldIndex, GetConstrainedBodyPair(joint), jointData);
+            var solverType = GetSolverType(joint);
+
+            Entity entity = CreateJointEntity(worldIndex, GetConstrainedBodyPair(joint), solverType, jointData);
         }
 
         public override void Bake(FixedJoint authoring)
@@ -889,7 +908,8 @@ namespace Unity.Physics.Authoring
             jointData.SetImpulseEventThresholdAllConstraints(joint.breakForce * Time.fixedDeltaTime, joint.breakTorque * Time.fixedDeltaTime);
 
             var worldIndex = GetWorldIndex(joint);
-            Entity entity = CreateJointEntity(worldIndex, GetConstrainedBodyPair(joint), jointData);
+            var solverType = GetSolverType(joint);
+            Entity entity = CreateJointEntity(worldIndex, GetConstrainedBodyPair(joint), solverType, jointData);
         }
 
         public override void Bake(HingeJoint authoring)
@@ -928,7 +948,8 @@ namespace Unity.Physics.Authoring
             var jointData = PhysicsJoint.CreateLimitedDistance(jointAnchorA, jointAnchorB, distanceRange, impulseEventThreshold, springFrequency, dampingRatio);
 
             var worldIndex = GetWorldIndex(joint);
-            Entity entity = CreateJointEntity(worldIndex, GetConstrainedBodyPair(joint), jointData);
+            var solverType = GetSolverType(joint);
+            Entity entity = CreateJointEntity(worldIndex, GetConstrainedBodyPair(joint), solverType, jointData);
         }
 
         public override void Bake(UnityEngine.SpringJoint authoring)

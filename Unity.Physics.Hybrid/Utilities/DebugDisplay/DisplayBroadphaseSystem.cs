@@ -1,5 +1,6 @@
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -11,15 +12,17 @@ namespace Unity.Physics.Authoring
     /// Job which walks the broadphase tree and displays the
     /// bounding box of leaf nodes.
     [BurstCompile]
-    internal struct DisplayBroadphaseJob : IJob
+    struct DisplayBroadphaseJob : IJob
     {
+        public DebugDraw DebugDraw;
+
         [ReadOnly]
         public NativeList<BoundingVolumeHierarchy.Node> StaticNodes;
 
         [ReadOnly]
         public NativeList<BoundingVolumeHierarchy.Node> DynamicNodes;
 
-        internal void DrawLeavesRecursive(NativeArray<BoundingVolumeHierarchy.Node> nodes, Unity.DebugDisplay.ColorIndex color, int nodeIndex)
+        void DrawLeavesRecursive(NativeArray<BoundingVolumeHierarchy.Node> nodes, Unity.DebugDisplay.ColorIndex color, int nodeIndex)
         {
             if (nodes[nodeIndex].IsLeaf)
             {
@@ -30,7 +33,7 @@ namespace Unity.Physics.Authoring
                     {
                         Aabb aabb = nodes[nodeIndex].Bounds.GetAabb(l);
                         float3 center = aabb.Center;
-                        PhysicsDebugDisplaySystem.Box(aabb.Extents, center, quaternion.identity, color);
+                        DebugDraw.Box(aabb.Extents, center, quaternion.identity, color);
                     }
                 }
 
@@ -57,17 +60,22 @@ namespace Unity.Physics.Authoring
     [RequireMatchingQueriesForUpdate]
     [UpdateInGroup(typeof(PhysicsDebugDisplayGroup))]
     [BurstCompile]
-    internal partial struct DisplayBroadphaseAabbsSystem : ISystem
+    partial struct DisplayBroadphaseAabbsSystem : ISystem
     {
+        [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<PhysicsDebugDisplayData>();
             state.RequireForUpdate<PhysicsWorldSingleton>();
         }
 
+        [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
             if (!SystemAPI.TryGetSingleton(out PhysicsDebugDisplayData debugDisplay) || debugDisplay.DrawBroadphase == 0)
+                return;
+
+            if (!SystemAPI.TryGetSingleton(out DebugDraw draw))
                 return;
 
             Broadphase broadphase = SystemAPI.GetSingleton<PhysicsWorldSingleton>().CollisionWorld.Broadphase;
@@ -76,6 +84,7 @@ namespace Unity.Physics.Authoring
             {
                 StaticNodes = broadphase.StaticTree.Nodes,
                 DynamicNodes = broadphase.DynamicTree.Nodes,
+                DebugDraw = draw
             }.Schedule(state.Dependency);
         }
     }

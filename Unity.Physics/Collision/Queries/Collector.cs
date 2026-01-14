@@ -296,18 +296,16 @@ namespace Unity.Physics
         // This must be a void ptr, since C# doesn't allow generic type pointers
         private void* m_CollectorPtr;
         private bool m_IgnoreTriggers;
-        private Entity m_EntityToIgnore;
 
-        public QueryInteractionCollector(ref C collector, bool ignoreTriggers, Entity entityToIgnore)
+        public QueryInteractionCollector(ref C collector, bool ignoreTriggers)
         {
             m_CollectorPtr = UnsafeUtility.AddressOf(ref collector);
-            m_EntityToIgnore = entityToIgnore;
             m_IgnoreTriggers = ignoreTriggers;
         }
 
         public bool AddHit(T hit)
         {
-            if ((m_IgnoreTriggers && (hit.Material.CollisionResponse == CollisionResponsePolicy.RaiseTriggerEvents)) || (hit.Entity == m_EntityToIgnore))
+            if (m_IgnoreTriggers && (hit.Material.CollisionResponse == CollisionResponsePolicy.RaiseTriggerEvents))
             {
                 return false;
             }

@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using Unity.Burst;
-using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Physics.Extensions;
@@ -54,6 +53,8 @@ namespace Unity.Physics.Authoring
             var customTags = authoring.CustomTags;
             if (!customTags.Equals(CustomPhysicsBodyTags.Nothing))
                 AddComponent(entity, new PhysicsCustomTags { Value = customTags.Value });
+
+            AddComponent(entity, new PhysicsSolverType { Value = authoring.SolverType });
 
             // Check that there is at least one collider in the hierarchy to add these three
             GetComponentsInChildren(colliderComponents);

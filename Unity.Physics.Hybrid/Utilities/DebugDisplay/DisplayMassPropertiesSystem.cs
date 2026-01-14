@@ -3,6 +3,7 @@ using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Burst;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace Unity.Physics.Authoring
 {
@@ -25,10 +26,14 @@ namespace Unity.Physics.Authoring
             if (!SystemAPI.TryGetSingleton(out PhysicsDebugDisplayData debugDisplay) || debugDisplay.DrawMassProperties == 0)
                 return;
 
+            if (!SystemAPI.TryGetSingleton(out DebugDraw draw))
+                return;
+
             var physicsWorld = SystemAPI.GetSingleton<PhysicsWorldSingleton>();
             var dynamicsWorld = physicsWorld.DynamicsWorld;
             state.Dependency = new DisplayMassPropertiesJob
             {
+                DebugDraw = draw,
                 MotionDatas = dynamicsWorld.MotionDatas,
                 MotionVelocities = dynamicsWorld.MotionVelocities
             }.Schedule(dynamicsWorld.MotionDatas.Length, 16, state.Dependency);
@@ -39,6 +44,7 @@ namespace Unity.Physics.Authoring
         [BurstCompile]
         struct DisplayMassPropertiesJob : IJobParallelFor
         {
+            [ReadOnly][NativeDisableUnsafePtrRestriction] public DebugDraw DebugDraw;
             [ReadOnly] public NativeArray<MotionData> MotionDatas;
             [ReadOnly] public NativeArray<MotionVelocity> MotionVelocities;
 
@@ -78,7 +84,7 @@ namespace Unity.Physics.Authoring
                     math.select(0, h, math.isfinite(h)),
                     math.select(0, w, math.isfinite(w)),
                     math.select(0, d, math.isfinite(d)));
-                PhysicsDebugDisplaySystem.Box(boxSize, com, o, DebugDisplay.ColorIndex.Magenta);
+                DebugDraw.Box(boxSize, com, o, DebugDisplay.ColorIndex.Magenta);
             }
         }
     }

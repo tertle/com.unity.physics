@@ -3,14 +3,20 @@ using Unity.Mathematics;
 
 namespace Unity.DebugDisplay
 {
-    internal struct Unit
+    struct Unit
     {
         internal int m_Begin;
         internal int m_Next;
         internal int m_End;
+        internal bool m_ResizeRequired;
 
         internal Unit AllocateAtomic(int count)
         {
+            if (count > Remaining)
+            {
+                m_ResizeRequired = true;
+            }
+
             var begin = m_Next;
             while (true)
             {
@@ -28,11 +34,7 @@ namespace Unity.DebugDisplay
         {
             m_Begin = m_Next = 0;
             m_End = count;
-        }
-
-        internal void Fill()
-        {
-            m_Next = m_End;
+            m_ResizeRequired = false;
         }
 
         internal int Length => m_End - m_Begin;

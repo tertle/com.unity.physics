@@ -165,8 +165,8 @@ namespace Unity.Physics.Tests.Dynamics.Joints
             {
                 NativeStream.Writer jacobianWriter = jacobiansOut.AsWriter();
                 jacobianWriter.BeginForEachIndex(0);
-                Solver.BuildJointJacobian(jointData, velocityA, velocityB, motionA, motionB, stepInput.Timestep,
-                    stepInput.NumSolverIterations, ref jacobianWriter);
+                Solver.BuildJointJacobian(ref jointData, jointData.SolverType, velocityA, velocityB, motionA, motionB, stepInput.Timestep,
+                    stepInput.NumSolverIterations, stepInput.DirectSolverSettings, ref jacobianWriter);
                 jacobianWriter.EndForEachIndex();
             }
 
@@ -201,7 +201,7 @@ namespace Unity.Physics.Tests.Dynamics.Joints
                     NativeStream.Reader jacobianReader = jacobiansOut.AsReader();
                     var jacIterator = new JacobianIterator(jacobianReader, 0);
 
-                    if (impulseEventStream.IsCreated && stepInput.IsLastSubstepAndLastSolverIteration)
+                    if (impulseEventStream.IsCreated && stepInput.ExportEventsInThisIteration)
                         impulseEventWriter.BeginForEachIndex(0);
 
                     while (jacIterator.HasJacobiansLeft())
@@ -214,7 +214,7 @@ namespace Unity.Physics.Tests.Dynamics.Joints
                             Solver.MotionStabilizationInput.Default);
                     }
 
-                    if (impulseEventStream.IsCreated && stepInput.IsLastSubstepAndLastSolverIteration)
+                    if (impulseEventStream.IsCreated && stepInput.ExportEventsInThisIteration)
                         impulseEventWriter.EndForEachIndex();
                 }
 
@@ -270,8 +270,6 @@ namespace Unity.Physics.Tests.Dynamics.Joints
                         {
                             Gravity = new float3(0.0f, -9.81f, 0.0f),
                             Timestep = JointTimestep,
-                            InvTimestep = Solver.CalculateInvTimeStep(JointTimestep),
-                            InvNumSolverIterations = 1.0f / numSolverIterations,
                             NumSubsteps = numSubsteps,
                             NumSolverIterations = numSolverIterations,
                             CurrentSubstep = 0,
@@ -423,8 +421,6 @@ namespace Unity.Physics.Tests.Dynamics.Joints
             {
                 Gravity = new float3(0.0f, -9.81f, 0.0f),
                 Timestep = JointTimestep,
-                InvTimestep = Solver.CalculateInvTimeStep(JointTimestep),
-                InvNumSolverIterations = 1.0f / numSolverIterations,
                 NumSubsteps = numSubsteps,
                 NumSolverIterations = numSolverIterations,
                 CurrentSubstep = 0,
@@ -569,8 +565,6 @@ namespace Unity.Physics.Tests.Dynamics.Joints
                 {
                     Gravity = float3.zero,
                     Timestep = timestep,
-                    InvTimestep = Solver.CalculateInvTimeStep(timestep),
-                    InvNumSolverIterations = 1.0f / numSolverIterations,
                     NumSubsteps = numSubsteps,
                     NumSolverIterations = numSolverIterations,
                     CurrentSubstep = 0,

@@ -4,6 +4,7 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using Unity.Burst;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Transforms;
 
 namespace Unity.Physics.Authoring
@@ -15,12 +16,14 @@ namespace Unity.Physics.Authoring
     [BurstCompile]
     public struct DisplayColliderAabbsJob : IJobParallelFor
     {
+        private DebugDraw DebugDraw;
         [ReadOnly] private NativeArray<RigidBody> RigidBodies;
 
-        public static JobHandle ScheduleJob(in NativeArray<RigidBody> rigidBodies, JobHandle inputDeps)
+        public static JobHandle ScheduleJob(in DebugDraw debugDraw, in NativeArray<RigidBody> rigidBodies, JobHandle inputDeps)
         {
             return new DisplayColliderAabbsJob
             {
+                DebugDraw = debugDraw,
                 RigidBodies = rigidBodies
             }.Schedule(rigidBodies.Length, 16, inputDeps);
         }
@@ -31,7 +34,7 @@ namespace Unity.Physics.Authoring
             {
                 Aabb aabb = RigidBodies[i].CalculateAabb();
                 float3 center = aabb.Center;
-                PhysicsDebugDisplaySystem.Box(aabb.Extents, center, Quaternion.identity, DebugDisplay.ColorIndex.BrightRed);
+                DebugDraw.Box(aabb.Extents, center, Quaternion.identity, DebugDisplay.ColorIndex.BrightRed);
             }
         }
     }
@@ -64,13 +67,16 @@ namespace Unity.Physics.Authoring
             if (!SystemAPI.TryGetSingleton(out PhysicsDebugDisplayData debugDisplay) || debugDisplay.DrawColliderAabbs == 0)
                 return;
 
+            if (!SystemAPI.TryGetSingleton(out DebugDraw draw))
+                return;
+
             switch (debugDisplay.ColliderAabbDisplayMode)
             {
                 case PhysicsDebugDisplayMode.PreIntegration:
                 {
                     if (SystemAPI.TryGetSingleton(out PhysicsWorldSingleton physicsWorldSingleton))
                     {
-                        state.Dependency = DisplayColliderAabbsJob.ScheduleJob(physicsWorldSingleton.PhysicsWorld.Bodies, state.Dependency);
+                        state.Dependency = DisplayColliderAabbsJob.ScheduleJob(draw, physicsWorldSingleton.PhysicsWorld.Bodies, state.Dependency);
                     }
                     break;
                 }
@@ -85,7 +91,7 @@ namespace Unity.Physics.Authoring
                         return;
                     }
 
-                    var displayHandle = DisplayColliderAabbsJob.ScheduleJob(rigidBodiesList.AsArray(), state.Dependency);
+                    var displayHandle = DisplayColliderAabbsJob.ScheduleJob(draw, rigidBodiesList.AsArray(), state.Dependency);
                     var disposeHandle = rigidBodiesList.Dispose(displayHandle);
 
                     state.Dependency = disposeHandle;
@@ -128,13 +134,16 @@ namespace Unity.Physics.Authoring
             var rigidBodiesList = new NativeList<RigidBody>(Allocator.TempJob);
             DrawColliderUtility.GetRigidBodiesFromQuery(ref state, ref ColliderQuery, ref rigidBodiesList);
 
+            if (!SystemAPI.TryGetSingleton(out DebugDraw draw))
+                return;
+
             if (rigidBodiesList.IsEmpty)
             {
                 rigidBodiesList.Dispose();
                 return;
             }
 
-            var displayHandle = DisplayColliderAabbsJob.ScheduleJob(rigidBodiesList.AsArray(), state.Dependency);
+            var displayHandle = DisplayColliderAabbsJob.ScheduleJob(draw, rigidBodiesList.AsArray(), state.Dependency);
             var disposeHandle = rigidBodiesList.Dispose(displayHandle);
 
             state.Dependency = disposeHandle;

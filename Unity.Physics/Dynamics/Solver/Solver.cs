@@ -1,30 +1,69 @@
+// Generic Options: //
+
+// When enabled, outputs processing information about the solver in each frame, such as which solver is used and the
+// number of islands processed by the direct solver.
+//#define DEBUG_LOG_SOLVER_INFO
+
+// Direct Solver Options: //
+
+// When enabled, the direct solver will solve independent islands in parallel. Disable this option for simplifying debugging activities.
+#define DIRECT_SOLVER_SOLVE_ISLANDS_IN_PARALLEL
+
+using System;
+using System.Runtime.CompilerServices;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
+using UnityEngine;
 using UnityEngine.Assertions;
 using static Unity.Physics.Math;
 
 namespace Unity.Physics
 {
-    /// <summary>   A static class that exposes Solver configuration structures. </summary>
-    public static class Solver
+    /// <summary>
+    /// <para> Solver types, used for calculating joint and contact forces.</para>
+    /// <para> Types appear in order of decreasing solver performance but increasing accuracy.</para>
+    /// </summary>
+    public enum SolverType : byte
     {
         /// <summary>
-        /// Takes the timestep in ms and returns the inverse of the timestep (frequency) in Hz.
+        ///     <para> Iterative solver (default). Fast and approximate.</para>
+        ///     <para> Ideal for situations involving many colliding rigid bodies.</para>
         /// </summary>
-        /// <param name="timeStep"> The time step in ms. </param>
-        /// <returns> The frequency in Hz. </returns>
-        public static float CalculateInvTimeStep(float timeStep)
+        Iterative = 0,
+
+        /// <summary>
+        ///     <para> Direct solver. Accurate but more computationally demanding.</para>
+        ///     <para> Ideal for situations involving complex jointed mechanisms with
+        ///     high mass or stiffness ratios, and for accurate contact resolution and friction modeling.
+        ///     See also <see cref="Solver.DirectSolverSettings"/>.</para>
+        /// </summary>
+        Direct = 1
+    }
+
+    /// <summary>   A static class that exposes Solver configuration structures. </summary>
+    public static partial class Solver
+    {
+        /// <summary> Default solver type </summary>
+        public const SolverType kDefaultSolverType = SolverType.Iterative;
+
+        /// <summary>
+        /// Takes the time step in ms and returns the inverse of the time step (simulation frequency) in Hz.
+        /// </summary>
+        /// <param name="timestep"> The time step in ms. </param>
+        /// <returns> The inverse time step (simulation frequency) in Hz. </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float CalculateInvTimestep(float timestep)
         {
-            return timeStep > 0.0f ? 1.0f / timeStep : 0.0f;
+            return math.select(0.0f, 1.0f / timestep, timestep > 0.0f);
         }
 
         /// <summary>   Settings for controlling the solver stabilization heuristic. </summary>
         public struct StabilizationHeuristicSettings
         {
-            private byte m_EnableSolverStabilization;
+            byte m_EnableSolverStabilization;
 
             /// <summary>   Global switch to enable/disable the whole heuristic (false by default) </summary>
             ///
@@ -37,7 +76,7 @@ namespace Unity.Physics
 
             // Individual features control (only valid when EnableSolverStabilizationHeuristic is true)
 
-            private byte m_EnableFrictionVelocities;
+            byte m_EnableFrictionVelocities;
 
             /// <summary>
             /// Switch to enable/disable heuristic when calculating friction velocities. Should be disabled
@@ -143,37 +182,39 @@ namespace Unity.Physics
         {
             /// <summary> Vector acceleration due to gravity in m/s^2 </summary>
             public float3 Gravity;
-            /// <summary> Timestep in seconds. </summary>
+            /// <summary> TimeStep in seconds. </summary>
             public float Timestep;
-            /// <summary> InvTimestep (frequency) in Hertz. </summary>
-            public float InvTimestep;
-            /// <summary> The inverse of the number of solver iterations. </summary>
-            public float InvNumSolverIterations;
+            /// <summary> Enables gyroscopic torque, which will be added to dynamic bodies in every simulation step. </summary>
+            public bool EnableGyroscopicTorque;
             /// <summary> The total number of substeps per frame. </summary>
             public int NumSubsteps;
             /// <summary> The total number of solver iterations per substep. </summary>
             public int NumSolverIterations;
+            /// <summary> The direct solver settings. </summary>
+            public DirectSolverSettings DirectSolverSettings;
             /// <summary> The current substep. Is -1 when uninitialized. </summary>
             public int CurrentSubstep;
             /// <summary> The current solver iteration. Is -1 when uninitialized. </summary>
             public int CurrentSolverIteration;
+            /// <summary> Disable exporting events (TriggerEvents, CollisionEvents or ImpulseEvents). Default is false. </summary>
+            public bool DisableExportEvents;
 
-            public bool IsFirstSubstep => CurrentSubstep == 0;
             public bool IsLastSubstep => CurrentSubstep == NumSubsteps - 1;
             public bool IsFirstSolverIteration => CurrentSolverIteration == 0;
             public bool IsLastSolverIteration => CurrentSolverIteration == NumSolverIterations - 1;
-            public bool MultipleSubstepsAndFirstSolverIteration => NumSubsteps > 1 && IsFirstSolverIteration;
-            public bool IsLastSubstepAndLastSolverIteration => IsLastSubstep && IsLastSolverIteration;
+
+            // Note: events are only exported in the last iteration of the last sub-step, unless events export is disabled.
+            public bool ExportEventsInThisIteration => IsLastSubstep && IsLastSolverIteration && !DisableExportEvents;
+
+            // Note: events are only exported in the last sub-step, unless events export is disabled.
+            public bool ExportEventsInThisSubstep => IsLastSubstep && !DisableExportEvents;
         }
 
         #region BuildJacobians
 
         // Schedule jobs to build Jacobians from the contacts stored in the simulation context for the first substep
         // where timeStep = frame timestep / numSubsteps
-        internal static SimulationJobHandles ScheduleBuildJacobiansJobs(ref PhysicsWorld world,
-            float timeStep, float gravityMagnitude, int numSubsteps, int numSolverIterations,
-            float maxDynamicDepenetrationVelocity, float maxStaticDepenetrationVelocity,
-            JobHandle inputDeps,
+        internal static SimulationJobHandles ScheduleBuildJacobiansJobs(in SimulationStepInput input, JobHandle inputDeps,
             ref NativeList<DispatchPairSequencer.DispatchPair> dispatchPairs,
             ref DispatchPairSequencer.SolverSchedulerInfo solverSchedulerInfo,
             ref NativeStream contacts, ref NativeStream jacobians, bool multiThreaded = true)
@@ -182,45 +223,71 @@ namespace Unity.Physics
 
             if (!multiThreaded)
             {
-                returnHandles.FinalExecutionHandle = new BuildJacobiansJob
+                var buildJob = new BuildJacobiansJob
                 {
+                    Input = input,
                     ContactsReader = contacts.AsReader(),
                     JacobiansWriter = jacobians.AsWriter(),
-                    TimeStep = timeStep,
-                    GravityMagnitude = gravityMagnitude,
-                    NumSubsteps = numSubsteps,
-                    NumSolverIterations = numSolverIterations,
-                    MaxDynamicDepenetrationVelocity = maxDynamicDepenetrationVelocity,
-                    MaxStaticDepenetrationVelocity = maxStaticDepenetrationVelocity,
-                    World = world,
-                    DispatchPairs = dispatchPairs.AsDeferredJobArray()
+                    DispatchPairs = dispatchPairs.AsDeferredJobArray(),
+                    SolverSchedulerInfo = solverSchedulerInfo
                 }.Schedule(inputDeps);
+
+                buildJob = new BuildDirectSolverJacobiansMapJob
+                {
+                    JacobiansReader = jacobians.AsReader(),
+                    SolverSchedulerInfo = solverSchedulerInfo,
+                    PhasedDispatchPairs = dispatchPairs.AsDeferredJobArray()
+                }.Schedule(buildJob);
+
+                returnHandles.FinalExecutionHandle = buildJob;
             }
             else
             {
-                var buildJob = new ParallelBuildJacobiansJob
+                var gravityMagnitude = math.length(input.Gravity);
+
+                var iterativeJacobiansHandle = new ParallelBuildJacobiansJob
                 {
+                    Input = input,
+                    GravityMagnitude = gravityMagnitude,
                     ContactsReader = contacts.AsReader(),
                     JacobiansWriter = jacobians.AsWriter(),
-                    TimeStep = timeStep,
-                    GravityMagnitude = gravityMagnitude,
-                    InvTimeStep = CalculateInvTimeStep(timeStep),
-                    NumSubsteps = numSubsteps,
-                    NumSolverIterations = numSolverIterations,
-                    MaxDynamicDepenetrationVelocity = maxDynamicDepenetrationVelocity,
-                    MaxStaticDepenetrationVelocity = maxStaticDepenetrationVelocity,
-                    World = world,
                     DispatchPairs = dispatchPairs.AsDeferredJobArray(),
-                    SolverSchedulerInfo = solverSchedulerInfo
-                };
-                JobHandle handle = buildJob.ScheduleUnsafeIndex0(solverSchedulerInfo.NumWorkItems, 1, inputDeps);
+                    IterativeSolverSchedulerInfo = solverSchedulerInfo.IterativePairsIterativeScheduling
+                }.ScheduleUnsafeIndex0(solverSchedulerInfo.IterativePairsIterativeScheduling.NumWorkItems, 1, inputDeps);
 
-                returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(
-                    dispatchPairs.Dispose(handle),
-                    contacts.Dispose(handle));
+                var couplingJacobiansHandle = new ParallelBuildJacobiansJob
+                {
+                    Input = input,
+                    GravityMagnitude = gravityMagnitude,
+                    ContactsReader = contacts.AsReader(),
+                    JacobiansWriter = jacobians.AsWriter(),
+                    DispatchPairs = dispatchPairs.AsDeferredJobArray(),
+                    IterativeSolverSchedulerInfo = solverSchedulerInfo.CouplingPairsIterativeScheduling
+                }.ScheduleUnsafeIndex0(solverSchedulerInfo.CouplingPairsIterativeScheduling.NumWorkItems, 1, inputDeps);
 
-                returnHandles.FinalExecutionHandle = handle;
+                var directJacobiansHandle = new ParallelBuildJacobiansJob
+                {
+                    Input = input,
+                    GravityMagnitude = gravityMagnitude,
+                    ContactsReader = contacts.AsReader(),
+                    JacobiansWriter = jacobians.AsWriter(),
+                    DispatchPairs = dispatchPairs.AsDeferredJobArray(),
+                    IterativeSolverSchedulerInfo = solverSchedulerInfo.DirectPairsIterativeScheduling
+                }.ScheduleUnsafeIndex0(solverSchedulerInfo.DirectPairsIterativeScheduling.NumWorkItems, 1, inputDeps);
+
+                directJacobiansHandle = new ParallelBuildDirectSolverJacobiansMapJob
+                {
+                    JacobiansReader = jacobians.AsReader(),
+                    SolverSchedulerInfo = solverSchedulerInfo,
+                    PhasedDispatchPairs = dispatchPairs.AsDeferredJobArray()
+                }.ScheduleUnsafeIndex0(solverSchedulerInfo.DirectPairsIterativeScheduling.NumWorkItems, 1, directJacobiansHandle);
+
+                returnHandles.FinalExecutionHandle = JobHandle.CombineDependencies(iterativeJacobiansHandle, couplingJacobiansHandle, directJacobiansHandle);
             }
+
+            returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(
+                dispatchPairs.Dispose(returnHandles.FinalExecutionHandle),
+                contacts.Dispose(returnHandles.FinalExecutionHandle));
 
             return returnHandles;
         }
@@ -228,88 +295,117 @@ namespace Unity.Physics
         [BurstCompile]
         struct BuildJacobiansJob : IJob
         {
-            [ReadOnly] public PhysicsWorld World;
+            [ReadOnly] public SimulationStepInput Input;
 
             public NativeStream.Reader ContactsReader;
             public NativeStream.Writer JacobiansWriter;
-            public float TimeStep; // Substep timestep
-            [ReadOnly] public float GravityMagnitude;
-            [ReadOnly] public NativeArray<DispatchPairSequencer.DispatchPair> DispatchPairs;
-            [ReadOnly] public int NumSubsteps;
-            [ReadOnly] public int NumSolverIterations;
-            [ReadOnly] public float MaxDynamicDepenetrationVelocity;
-            [ReadOnly] public float MaxStaticDepenetrationVelocity;
+            public NativeArray<DispatchPairSequencer.DispatchPair> DispatchPairs;
+
+            [ReadOnly] public DispatchPairSequencer.SolverSchedulerInfo SolverSchedulerInfo;
 
             public void Execute()
             {
-                BuildJacobians(ref World, TimeStep, GravityMagnitude, NumSubsteps, NumSolverIterations,
-                    MaxDynamicDepenetrationVelocity, MaxStaticDepenetrationVelocity,
-                    DispatchPairs, ref ContactsReader, ref JacobiansWriter);
+                BuildJacobians(Input, DispatchPairs, ref SolverSchedulerInfo, ref ContactsReader, ref JacobiansWriter);
             }
         }
 
         [BurstCompile]
         struct ParallelBuildJacobiansJob : IJobParallelForDefer
         {
-            [ReadOnly] public PhysicsWorld World;
+            [ReadOnly]
+            public SimulationStepInput Input;
+            public float GravityMagnitude;
 
             public NativeStream.Reader ContactsReader;
+
+            [NativeDisableContainerSafetyRestriction]
             public NativeStream.Writer JacobiansWriter;
-            public float TimeStep;     // timestep_frame / NumSubsteps
-            [ReadOnly] public float GravityMagnitude;
-            [ReadOnly] public NativeArray<DispatchPairSequencer.DispatchPair> DispatchPairs;
-            [ReadOnly] public int NumSubsteps;
-            [ReadOnly] public int NumSolverIterations;
-            [ReadOnly] public float MaxDynamicDepenetrationVelocity;
-            [ReadOnly] public float MaxStaticDepenetrationVelocity;
-            public float InvTimeStep;  // Frequency
-            [ReadOnly] public DispatchPairSequencer.SolverSchedulerInfo SolverSchedulerInfo;
 
-            public void Execute(int workItemIndex)
+            [NativeDisableContainerSafetyRestriction]
+            public NativeArray<DispatchPairSequencer.DispatchPair> DispatchPairs;
+
+            [ReadOnly]
+            public DispatchPairSequencer.IterativeSolverSchedulerInfo IterativeSolverSchedulerInfo;
+
+            public void Execute(int workItemIndexOffset)
             {
-                int firstDispatchPairIndex = SolverSchedulerInfo.GetWorkItemReadOffset(workItemIndex, out int dispatchPairCount);
+                var firstDispatchPairIndex = IterativeSolverSchedulerInfo.FirstDispatchPairIndex.Value + IterativeSolverSchedulerInfo.GetWorkItemReadOffset(workItemIndexOffset, out int dispatchPairCount);
+                var workItemIndex = IterativeSolverSchedulerInfo.FirstWorkItemIndex.Value + workItemIndexOffset;
 
-                ContactsReader.BeginForEachIndex(workItemIndex);
-                JacobiansWriter.BeginForEachIndex(workItemIndex);
-                BuildJacobians(ref World, TimeStep, InvTimeStep, GravityMagnitude, NumSubsteps, NumSolverIterations,
-                    MaxDynamicDepenetrationVelocity, MaxStaticDepenetrationVelocity,
-                    DispatchPairs, firstDispatchPairIndex, dispatchPairCount, ref ContactsReader, ref JacobiansWriter);
+                BuildJacobians(Input.World, Input.SubstepTimeStep, GravityMagnitude, Input.NumSubsteps, Input.NumSolverIterations,
+                    Input.MaxDynamicDepenetrationVelocity, Input.MaxStaticDepenetrationVelocity, Input.DirectSolverSettings,
+                    workItemIndex, DispatchPairs, firstDispatchPairIndex, dispatchPairCount, ref ContactsReader, ref JacobiansWriter);
             }
         }
 
         /// <summary>
         /// Build Jacobians from the contacts and joints stored in the simulation context.
         /// </summary>
-        internal static void BuildJacobians(ref PhysicsWorld world,
-            float timeStep, float gravityMagnitude, int numSubsteps, int numSolverIterations,
-            float maxDynamicDepenetrationVelocity, float maxStaticDepenetrationVelocity,
-            NativeArray<DispatchPairSequencer.DispatchPair> dispatchPairs,
+        internal static void BuildJacobians(in SimulationStepInput input,
+            NativeArray<DispatchPairSequencer.DispatchPair> dispatchPairs, ref DispatchPairSequencer.SolverSchedulerInfo solverSchedulerInfo,
             ref NativeStream.Reader contactsReader, ref NativeStream.Writer jacobiansWriter)
         {
-            contactsReader.BeginForEachIndex(0);
-            jacobiansWriter.BeginForEachIndex(0);
-            float frequency = CalculateInvTimeStep(timeStep);
+            var timeStep = input.SubstepTimeStep; // Note: need to use substep timestep for each sub-solve and for building/updating the required Jacobians
+            var gravityMagnitude = math.length(input.Gravity);
+            var numSubsteps = input.NumSubsteps;
+            var numSolverIterations = input.NumSolverIterations;
+            var maxDynamicDepenetrationVelocity = input.MaxDynamicDepenetrationVelocity;
+            var maxStaticDepenetrationVelocity = input.MaxStaticDepenetrationVelocity;
 
-            BuildJacobians(ref world, timeStep, frequency, gravityMagnitude, numSubsteps, numSolverIterations,
-                maxDynamicDepenetrationVelocity, maxStaticDepenetrationVelocity, dispatchPairs,
-                0, dispatchPairs.Length, ref contactsReader, ref jacobiansWriter);
+            var workItemIndex = 0;
+
+            // pure iterative pairs:
+            if (solverSchedulerInfo.IterativePairsIterativeScheduling.NumDispatchPairs.Value > 0)
+            {
+                BuildJacobians(input.World, timeStep, gravityMagnitude, numSubsteps, numSolverIterations,
+                    maxDynamicDepenetrationVelocity, maxStaticDepenetrationVelocity, input.DirectSolverSettings,
+                    workItemIndex++, dispatchPairs,
+                    solverSchedulerInfo.IterativePairsIterativeScheduling.FirstDispatchPairIndex.Value,
+                    solverSchedulerInfo.IterativePairsIterativeScheduling.NumDispatchPairs.Value, ref contactsReader, ref jacobiansWriter);
+            }
+
+            // iterative coupling pairs:
+            if (solverSchedulerInfo.CouplingPairsIterativeScheduling.NumDispatchPairs.Value > 0)
+            {
+                BuildJacobians(input.World, timeStep, gravityMagnitude, numSubsteps, numSolverIterations,
+                    maxDynamicDepenetrationVelocity, maxStaticDepenetrationVelocity, input.DirectSolverSettings,
+                    workItemIndex++, dispatchPairs,
+                    solverSchedulerInfo.CouplingPairsIterativeScheduling.FirstDispatchPairIndex.Value,
+                    solverSchedulerInfo.CouplingPairsIterativeScheduling.NumDispatchPairs.Value, ref contactsReader, ref jacobiansWriter);
+            }
+
+            // direct solver pairs:
+            if (solverSchedulerInfo.DirectPairsIterativeScheduling.NumDispatchPairs.Value > 0)
+            {
+                BuildJacobians(input.World, timeStep, gravityMagnitude, numSubsteps, numSolverIterations,
+                    maxDynamicDepenetrationVelocity, maxStaticDepenetrationVelocity, input.DirectSolverSettings,
+                    workItemIndex, dispatchPairs,
+                    solverSchedulerInfo.DirectPairsIterativeScheduling.FirstDispatchPairIndex.Value,
+                    solverSchedulerInfo.DirectPairsIterativeScheduling.NumDispatchPairs.Value, ref contactsReader, ref jacobiansWriter);
+            }
         }
 
         static unsafe void BuildJacobians(
-            ref PhysicsWorld world,
-            float timestep, // the substep time
-            float frequency,
+            in PhysicsWorld world,
+            float timestep, // the substep timestep
             float gravityMagnitude,
             int numSubsteps,
             int numSolverIterations,
             float maxDynamicDepenetrationVelocity,
             float maxStaticDepenetrationVelocity,
+            in DirectSolverSettings directSolverSettings,
+            int workItemIndex,
             NativeArray<DispatchPairSequencer.DispatchPair> dispatchPairs,
             int firstDispatchPairIndex,
             int dispatchPairCount,
             ref NativeStream.Reader contactReader,
             ref NativeStream.Writer jacobianWriter)
         {
+            contactReader.BeginForEachIndex(workItemIndex);
+            jacobianWriter.BeginForEachIndex(workItemIndex);
+
+            var invTimestep = CalculateInvTimestep(timestep);
+
             // fall back to defaults if depenetration velocities not set or invalid.
             maxDynamicDepenetrationVelocity = math.select(maxDynamicDepenetrationVelocity,
                 SimulationStepInput.DefaultMaxDynamicDepenetrationVelocity, maxDynamicDepenetrationVelocity <= 0);
@@ -319,7 +415,8 @@ namespace Unity.Physics
             // Source: Narrowphase uses predicted velocity to generate dispatchPairs and contactReader data
             for (int i = 0; i < dispatchPairCount; i++)
             {
-                var pair = dispatchPairs[i + firstDispatchPairIndex];
+                var dispatchPairIndex = i + firstDispatchPairIndex;
+                var pair = dispatchPairs[dispatchPairIndex];
                 if (!pair.IsValid)
                 {
                     continue;
@@ -331,6 +428,8 @@ namespace Unity.Physics
 
                 if (pair.IsContact)
                 {
+                    bool pairHasContacts = false;
+
                     // At some point during this frame, there MAY be a contact between these bodies
                     while (contactReader.RemainingItemCount > 0)
                     {
@@ -350,6 +449,12 @@ namespace Unity.Physics
                             out MTransform worldFromA, out MTransform worldFromB);
 
                         float sumInvMass = velocityA.InverseMass + velocityB.InverseMass;
+
+                        // Note that for the velocity of static bodies, velocity.IsKinematic also returns true since
+                        // for static bodies we obtain a MotionVelocity.Zero in GetMotions above. So the check below
+                        // is true for pairs of type kinematic / kinematic and kinematic / static.
+                        // Note also that static / static pairs are not generated by the collision detection by design
+                        // and thus don't appear here.
                         bool bothMotionsAreKinematic = velocityA.IsKinematic && velocityB.IsKinematic;
 
                         // Skip contact between infinite mass bodies which don't want to raise events. These cannot have any effect during solving.
@@ -365,12 +470,26 @@ namespace Unity.Physics
                                 continue;
                             }
                         }
+                        else
+                        {
+                            contactHeader.JacobianFlags |= JacobianFlags.IsContactDynamic;
+                        }
 
                         JacobianType jacType = ((int)(contactHeader.JacobianFlags) & (int)(JacobianFlags.IsTrigger)) != 0 ?
                             JacobianType.Trigger : JacobianType.Contact;
 
+                        JacobianFlags jacFlags = contactHeader.JacobianFlags;
+
+                        if (jacType == JacobianType.Contact && pair.SolverType == SolverType.Direct)
+                        {
+                            // @todo direct solver: for now we need to set this flag so that the contact manifold is stored in the jacobian,
+                            // for later access in the direct solver. Once we build the direct solver's Jacobian matrices in the BuildJacobians phase,
+                            // we won't need to do this anymore.
+                            jacFlags |= JacobianFlags.EnableCollisionEvents;
+                        }
+
                         // Write size before every jacobian and allocate all necessary data for this jacobian
-                        int jacobianSize = JacobianHeader.CalculateSize(jacType, contactHeader.JacobianFlags, contactHeader.NumContacts);
+                        int jacobianSize = JacobianHeader.CalculateSize(jacType, jacFlags, contactHeader.NumContacts);
                         jacobianWriter.Write(jacobianSize);
                         byte* jacobianPtr = jacobianWriter.Allocate(jacobianSize);
 
@@ -380,7 +499,8 @@ namespace Unity.Physics
                         ref JacobianHeader jacobianHeader = ref UnsafeUtility.AsRef<JacobianHeader>(jacobianPtr);
                         jacobianHeader.BodyPair = contactHeader.BodyPair;
                         jacobianHeader.Type = jacType;
-                        jacobianHeader.Flags = contactHeader.JacobianFlags;
+                        jacobianHeader.Flags = jacFlags;
+                        jacobianHeader.ConstraintBlockInfo = new ConstraintBlockInfo { Index = 0, Length = 1};
 
                         var baseJac = new BaseContactJacobian
                         {
@@ -422,7 +542,7 @@ namespace Unity.Physics
                             for (int j = 0; j < contactHeader.NumContacts; j++)
                             {
                                 ContactJacobian.BuildIndividualContactJacobians(j, contactJacobian.BaseJacobian.Normal,
-                                    worldFromA, worldFromB, frequency, numSubsteps, velocityA, velocityB,
+                                    worldFromA, worldFromB, invTimestep, numSubsteps, velocityA, velocityB,
                                     sumInvMass, maxDepenetrationVelocity, ref jacobianHeader, ref centerA, ref centerB,
                                     ref contactReader);
 
@@ -507,10 +627,18 @@ namespace Unity.Physics
                                 // Build the jacobian
                                 ContactJacobian.BuildIndividualContactJacobians(
                                     j, triggerJacobian.BaseJacobian.Normal, worldFromA, worldFromB,
-                                    frequency, numSubsteps, velocityA, velocityB, sumInvMass, maxDepenetrationVelocity,
+                                    invTimestep, numSubsteps, velocityA, velocityB, sumInvMass, maxDepenetrationVelocity,
                                     ref jacobianHeader, ref centerA, ref centerB, ref contactReader);
                             }
                         }
+
+                        pairHasContacts = true;
+                    }
+
+                    if (!pairHasContacts)
+                    {
+                        // invalidate dispatch pair since it has no contacts and thus shouldn't be processed
+                        dispatchPairs[dispatchPairIndex] = DispatchPairSequencer.DispatchPair.Invalid;
                     }
                 }
                 else
@@ -520,11 +648,11 @@ namespace Unity.Physics
                     int bodyIndexA = joint.BodyPair.BodyIndexA;
                     int bodyIndexB = joint.BodyPair.BodyIndexB;
 
-                    GetMotion(ref world, bodyIndexA, out MotionVelocity velocityA, out MotionData motionA);
-                    GetMotion(ref world, bodyIndexB, out MotionVelocity velocityB, out MotionData motionB);
+                    GetMotion(world, bodyIndexA, out MotionVelocity velocityA, out MotionData motionA);
+                    GetMotion(world, bodyIndexB, out MotionVelocity velocityB, out MotionData motionB);
 
-                    BuildJointJacobian(joint, velocityA, velocityB, motionA, motionB, timestep,
-                        numSolverIterations, ref jacobianWriter);
+                    BuildJointJacobian(ref joint, pair.SolverType, velocityA, velocityB, motionA, motionB, timestep,
+                        numSolverIterations, directSolverSettings, ref jacobianWriter);
                 }
             }
 
@@ -539,7 +667,7 @@ namespace Unity.Physics
 
             if (jacobianHeader.HasDetailedStaticMeshCollision && (isBodyAStatic || isBodyBStatic))
             {
-                ref JacobianPolygonData jacobianPolygonContact = ref jacobianHeader.AccessJacobianContactData();
+                ref ContactJacobianPolygonData jacobianPolygonContact = ref jacobianHeader.AccessJacobianContactData();
 
                 // setup conditional variables.
                 RigidBody body = default;
@@ -583,9 +711,9 @@ namespace Unity.Physics
 
         #region BuildIndividualJacobians
 
-        internal static unsafe void BuildJointJacobian(Joint joint,
-            MotionVelocity velocityA, MotionVelocity velocityB, MotionData motionA, MotionData motionB,
-            float timestep, int numSolverIterations, [NoAlias] ref NativeStream.Writer jacobianWriter)
+        internal static unsafe void BuildJointJacobian(ref Joint joint, SolverType solverTypeOverride,
+            in MotionVelocity velocityA, in MotionVelocity velocityB, in MotionData motionA, in MotionData motionB,
+            float timestep, int numSolverIterations, in DirectSolverSettings directSolverSettings, [NoAlias] ref NativeStream.Writer jacobianWriter)
         {
             var bodyAFromMotionA = new MTransform(motionA.BodyFromMotion);
             MTransform motionAFromJoint = Mul(Inverse(bodyAFromMotionA), joint.AFromJoint);
@@ -597,6 +725,15 @@ namespace Unity.Physics
             fixed(void* ptr = &constraintBlock)
             {
                 var constraintPtr = (Constraint*)ptr;
+
+                // count effective number of constraints in block
+                var numConstraints = 0;
+                for (var i = 0; i < constraintBlock.Length; i++)
+                {
+                    numConstraints += math.select(0, 1, constraintPtr[i].Dimension > 0);
+                }
+
+                var constraintIndex = 0;
                 for (var i = 0; i < constraintBlock.Length; i++)
                 {
                     Constraint constraint = constraintPtr[i];
@@ -650,7 +787,7 @@ namespace Unity.Physics
 
                     // Write size before every jacobian
                     JacobianFlags jacFlags = constraint.ShouldRaiseImpulseEvents ? JacobianFlags.EnableImpulseEvents : 0;
-                    int jacobianSize = JacobianHeader.CalculateSize(jacType, jacFlags);
+                    int jacobianSize = JacobianHeader.CalculateJointSize(jacType, jacFlags, solverTypeOverride);
                     jacobianWriter.Write(jacobianSize);
 
                     // Allocate all necessary data for this jacobian
@@ -662,11 +799,20 @@ namespace Unity.Physics
                     header.BodyPair = joint.BodyPair;
                     header.Type = jacType;
                     header.Flags = jacFlags;
+                    header.ConstraintBlockInfo = new ConstraintBlockInfo { Index = constraintIndex++, Length = numConstraints };
+
+                    // Prepare joint regularization parameters:
 
                     JacobianUtilities.CalculateConstraintTauAndDamping(constraint.SpringFrequency, constraint.DampingRatio,
                         timestep, numSolverIterations, out float tau, out float damping);
 
-                    // Build the Jacobian
+                    if (solverTypeOverride == SolverType.Direct)
+                    {
+                        header.AccessDirectSolverRegularizationData() = JacobianUtilities.CalculateDirectSolverRegularizationData(
+                            header, constraint, velocityA, velocityB, directSolverSettings, timestep);
+                    }
+
+                    // Build the Jacobian:
                     switch (constraint.Type)
                     {
                         case ConstraintType.Linear:
@@ -754,18 +900,18 @@ namespace Unity.Physics
                     MotionVelocities = physicsWorld.MotionVelocities,
                     Bodies = physicsWorld.Bodies,
                     stepInput = stepInput,
-                }.Schedule(inputDeps);
+                }.Schedule(updateHandle);
             }
             else
             {
-                updateHandle = new ParallelUpdateJacobiansJob()
+                updateHandle = new ParallelUpdateJacobiansJob
                 {
                     JacobiansReader = jacobians.AsReader(),
                     MotionDatas = physicsWorld.MotionDatas,
                     MotionVelocities = physicsWorld.MotionVelocities,
                     Bodies = physicsWorld.Bodies,
                     stepInput = stepInput,
-                }.ScheduleUnsafeIndex0(solverSchedulerInfo.NumWorkItems, 1, inputDeps);
+                }.ScheduleUnsafe(solverSchedulerInfo.NumIterativeWorkItems, 1, updateHandle);
             }
 
             return updateHandle;
@@ -783,7 +929,10 @@ namespace Unity.Physics
 
             public void Execute()
             {
-                Update(0, MotionDatas, MotionVelocities, Bodies, ref JacobiansReader, stepInput);
+                for (int i = 0; i < JacobiansReader.ForEachCount; ++i)
+                {
+                    UpdateJacobians(workItemIndex: i, MotionDatas, MotionVelocities, Bodies, ref JacobiansReader, stepInput);
+                }
             }
         }
 
@@ -799,19 +948,19 @@ namespace Unity.Physics
 
             public void Execute(int workItemIndex)
             {
-                Update(workItemIndex, MotionDatas, MotionVelocities, Bodies,
+                UpdateJacobians(workItemIndex, MotionDatas, MotionVelocities, Bodies,
                     ref JacobiansReader, stepInput);
             }
         }
 
-        internal static void Update(int i,
+        internal static void UpdateJacobians(int workItemIndex,
             [NoAlias] NativeArray<MotionData> motionDatas,
             [NoAlias] NativeArray<MotionVelocity> motionVelocities,
             [NoAlias] NativeArray<RigidBody> bodies,
             [NoAlias] ref NativeStream.Reader jacobianReader,
             StepInput stepInput)
         {
-            var jacIterator = new JacobianIterator(jacobianReader, i);
+            var jacIterator = new JacobianIterator(jacobianReader, workItemIndex);
             while (jacIterator.HasJacobiansLeft())
             {
                 ref JacobianHeader header = ref jacIterator.ReadJacobianHeader();
@@ -861,10 +1010,10 @@ namespace Unity.Physics
         #region SolveJacobians
 
         /// <summary>   Schedule jobs to solve the Jacobians stored in the simulation context. </summary>
-        internal static unsafe SimulationJobHandles ScheduleSolveJacobiansJobs(
-            ref DynamicsWorld dynamicsWorld, StepInput stepInput,
-            ref NativeStream jacobians, ref NativeStream collisionEvents, ref NativeStream triggerEvents,
-            ref NativeStream impulseEvents, ref DispatchPairSequencer.SolverSchedulerInfo solverSchedulerInfo,
+        internal static SimulationJobHandles ScheduleSolveJacobiansJobs(
+            in DynamicsWorld dynamicsWorld, StepInput stepInput,
+            in NativeStream jacobians, in NativeStream collisionEvents, in NativeStream triggerEvents,
+            in NativeStream impulseEvents, in DispatchPairSequencer.SolverSchedulerInfo solverSchedulerInfo,
             StabilizationData solverStabilizationData, JobHandle inputDeps, bool multiThreaded = true)
         {
             SimulationJobHandles returnHandles = default;
@@ -875,135 +1024,294 @@ namespace Unity.Physics
                 {
                     CollisionEventsWriter = collisionEvents.AsWriter(),
                     JacobiansReader = jacobians.AsReader(),
-                    stepInput = stepInput,
+                    StepInput = stepInput,
+                    SolverSchedulerInfo = solverSchedulerInfo,
                     TriggerEventsWriter = triggerEvents.AsWriter(),
                     ImpulseEventsWriter = impulseEvents.AsWriter(),
                     MotionVelocities = dynamicsWorld.MotionVelocities,
+                    MotionDatas = dynamicsWorld.MotionDatas,
                     SolverStabilizationData = solverStabilizationData,
                 }.Schedule(inputDeps);
-
-                return returnHandles;
             }
-
-            JobHandle handle = inputDeps;
-
-            // early out if there are no work items to process
-            int numPhases = solverSchedulerInfo.NumActivePhases[0];
-            if (numPhases > 0)
+            else
             {
+                JobHandle handle = inputDeps;
+
+                // early out if there are no work items to process
+                bool needSolver = (solverSchedulerInfo.NumIterativeWorkItems.Value + solverSchedulerInfo.DirectPairsDirectScheduling.NumIslands) > 0;
+
+                if (needSolver)
                 {
-                    var phaseInfoPtrs =
-                        (DispatchPairSequencer.SolverSchedulerInfo.SolvePhaseInfo*)NativeArrayUnsafeUtility
-                            .GetUnsafeBufferPointerWithoutChecks(solverSchedulerInfo.PhaseInfo);
+                    bool needCoupling = solverSchedulerInfo.CouplingPairsIterativeScheduling.NumWorkItems[0] > 0;
 
-                    float3 gravityNormalized = float3.zero;
-                    if (solverStabilizationData.StabilizationHeuristicSettings.EnableSolverStabilization)
+                    if (!needCoupling)
                     {
-                        gravityNormalized = math.normalizesafe(solverStabilizationData.Gravity);
-                    }
+                        // run iterative and direct solver independently:
+                        var motionVelocities = dynamicsWorld.MotionVelocities;
 
-                    for (int iSolverIteration = 0; iSolverIteration < stepInput.NumSolverIterations; iSolverIteration++)
-                    {
-                        stepInput.CurrentSolverIteration = iSolverIteration;
-
-                        for (int phaseId = 0; phaseId < numPhases; phaseId++)
+                        // direct solver constraints:
+#if DIRECT_SOLVER_SOLVE_ISLANDS_IN_PARALLEL
+                        var directHandle = new ParallelDirectSolverJob
+#else
+                        var directHandle = new DirectSolverJob
+#endif
                         {
-                            var job = new ParallelSolverJob
-                            {
-                                JacobiansReader = jacobians.AsReader(),
-                                PhaseIndex = phaseId,
-                                Phases = solverSchedulerInfo.PhaseInfo,
-                                MotionVelocities = dynamicsWorld.MotionVelocities,
-                                SolverStabilizationData = solverStabilizationData,
-                                stepInput = stepInput
-                            };
-
-                            // Only initialize event writers for last solver iteration jobs
-                            if (stepInput.IsLastSolverIteration)
-                            {
-                                job.CollisionEventsWriter = collisionEvents.AsWriter();
-                                job.TriggerEventsWriter = triggerEvents.AsWriter();
-                                job.ImpulseEventsWriter = impulseEvents.AsWriter();
-                            }
-
-                            var info = phaseInfoPtrs[phaseId];
-                            // Note: If we have duplicate body indices across batches in this phase we need to process the phase
-                            // sequentially to prevent data races. In this case, we choose a large batch size (batch equal to number of work items)
-                            // to prevent any parallelization of the work.
-                            int batchSize = info.ContainsDuplicateIndices ? info.NumWorkItems : 1;
-                            handle = job.Schedule(info.NumWorkItems, batchSize, handle);
+                            DirectSolverSchedulerInfo = solverSchedulerInfo.DirectPairsDirectScheduling,
+                            JacobiansReader = jacobians.AsReader(),
+                            MotionVelocities = motionVelocities,
+                            MotionDatas = dynamicsWorld.MotionDatas,
+                            StepInput = stepInput,
                         }
-
-                        // Stabilize velocities
+#if DIRECT_SOLVER_SOLVE_ISLANDS_IN_PARALLEL
+                        .Schedule(solverSchedulerInfo.DirectPairsDirectScheduling.NumIslands, 1, handle);
+#else
+                        .Schedule(handle);
+#endif
+                        float3 gravityNormalized = float3.zero;
                         if (solverStabilizationData.StabilizationHeuristicSettings.EnableSolverStabilization)
                         {
-                            var stabilizeVelocitiesJob = new StabilizeVelocitiesJob
-                            {
-                                MotionVelocities = dynamicsWorld.MotionVelocities,
-                                SolverStabilizationData = solverStabilizationData,
-                                GravityPerStep = solverStabilizationData.Gravity * stepInput.Timestep, //job doesn't need gravity in stabilize struct
-                                GravityNormalized = gravityNormalized,
-                                IsFirstIteration = stepInput.IsFirstSolverIteration
-                            };
+                            gravityNormalized = math.normalizesafe(solverStabilizationData.Gravity);
 
-                            handle = stabilizeVelocitiesJob.Schedule(dynamicsWorld.NumMotions, 64, handle);
+                            // @todo direct solver (DOTS-7639): assign directHandle as input dependencies for iterative
+                            // solver since if solver stabilization is enabled, we can't run the direct solver in parallel
+                            // to the iterative solver as the motion velocities that the direct solver is reading and writing
+                            // are modified in place by the stabilization.
+                            // The stabilization should only apply to motion velocities on iterative bodies. We can use
+                            // the "direct solver body" flag to filter out the direct ones. For this we need to store
+                            // the direct body flag in the world, which is fine.
+                            handle = directHandle;
                         }
-                    }
 
-                    returnHandles.FinalDisposeHandle = handle;
+                        JobHandle exportDirectEventsHandle = default;
+                        if (stepInput.ExportEventsInThisSubstep)
+                        {
+                            // Export events for joints and contacts processed by the direct solver:
+                            exportDirectEventsHandle = new ParallelExportEventsJob
+                            {
+                                JacobiansReader = jacobians.AsReader(),
+                                MotionVelocities = motionVelocities,
+                                CollisionEventsWriter = collisionEvents.AsWriter(),
+                                TriggerEventsWriter = triggerEvents.AsWriter(),
+                                ImpulseEventsWriter = impulseEvents.AsWriter(),
+                                IterativeSolverSchedulerInfo = solverSchedulerInfo.DirectPairsIterativeScheduling,
+                                Timestep = stepInput.Timestep
+                            }.Schedule(solverSchedulerInfo.DirectPairsIterativeScheduling.NumWorkItems[0], 1, directHandle);
+                        }
+
+                        var iterativeHandle = handle;
+                        for (int iSolverIteration = 0; iSolverIteration < stepInput.NumSolverIterations; iSolverIteration++)
+                        {
+                            stepInput.CurrentSolverIteration = iSolverIteration;
+
+                            // pure iterative constraints:
+                            iterativeHandle = ScheduleIterativeSolverPhasedIteration(solverSchedulerInfo.IterativePairsIterativeScheduling,
+                                jacobians, motionVelocities, stepInput, solverStabilizationData, collisionEvents, triggerEvents, impulseEvents,
+                                iterativeHandle);
+
+                            // stabilize velocities:
+                            if (solverStabilizationData.StabilizationHeuristicSettings.EnableSolverStabilization)
+                            {
+                                iterativeHandle = new StabilizeVelocitiesJob
+                                {
+                                    MotionVelocities = motionVelocities,
+                                    SolverStabilizationData = solverStabilizationData,
+                                    GravityPerStep = solverStabilizationData.Gravity * stepInput.Timestep,
+                                    GravityNormalized = gravityNormalized,
+                                    IsFirstIteration = stepInput.IsFirstSolverIteration
+                                }.Schedule(dynamicsWorld.NumMotions, 64, iterativeHandle);
+                            }
+                        }
+
+                        handle = JobHandle.CombineDependencies(iterativeHandle, directHandle, exportDirectEventsHandle);
+                    }
+                    else
+                    {
+                        // iterative solver coupled with direct solver:
+
+                        // Disable exporting events during the first phase since events are exported by the iterative solver
+                        // in the last iteration during the post-solve.
+                        // This includes events for constraints processed by the direct solver.
+                        var oldDisableExportEvents = stepInput.DisableExportEvents;
+                        stepInput.DisableExportEvents = true;
+
+                        // Phase 1: Pre-Solve
+                        // iterative solver only, on all constraints, to get a good initial guess for all constraints,
+                        // including coupling and direct.
+
+                        handle = ScheduleIterativeSolver(dynamicsWorld, solverSchedulerInfo,
+                            jacobians, stepInput, solverStabilizationData, collisionEvents, triggerEvents, impulseEvents, handle);
+
+                        // Phase 2: Solve
+                        // direct solver on direct constraints, for accurate solution of direct constraints.
+                        // Run after iterative solver has completed to avoid race conditions.
+
+#if DIRECT_SOLVER_SOLVE_ISLANDS_IN_PARALLEL
+                        handle = new ParallelDirectSolverJob
+#else
+                        handle = new DirectSolverJob
+#endif
+                        {
+                            DirectSolverSchedulerInfo = solverSchedulerInfo.DirectPairsDirectScheduling,
+                            JacobiansReader = jacobians.AsReader(),
+                            MotionVelocities = dynamicsWorld.MotionVelocities,
+                            MotionDatas = dynamicsWorld.MotionDatas,
+                            StepInput = stepInput,
+#if DIRECT_SOLVER_SOLVE_ISLANDS_IN_PARALLEL
+                        }.Schedule(solverSchedulerInfo.DirectPairsDirectScheduling.NumIslands, 1, handle);
+#else
+                        }.Schedule(handle);
+#endif
+
+                        // Phase 3: Post-Solve
+                        // Again, iterative solver on all constraints, to refine and combine solutions for direct and iterative constraints
+
+                        // re-enable exporting events for this phase.
+                        stepInput.DisableExportEvents = oldDisableExportEvents;
+
+                        handle = ScheduleIterativeSolver(dynamicsWorld, solverSchedulerInfo,
+                            jacobians, stepInput, solverStabilizationData, collisionEvents, triggerEvents, impulseEvents, handle);
+                    }
                 }
+
+                returnHandles.FinalDisposeHandle = handle;
+                returnHandles.FinalExecutionHandle = handle;
             }
 
             // Dispose processed data
             if (stepInput.IsLastSubstep)
             {
                 returnHandles.FinalDisposeHandle = JobHandle.CombineDependencies(
-                    jacobians.Dispose(handle),
-                    solverSchedulerInfo.ScheduleDisposeJob(handle),
+                    jacobians.Dispose(returnHandles.FinalExecutionHandle),
+                    solverSchedulerInfo.ScheduleDisposeJob(returnHandles.FinalExecutionHandle),
                     returnHandles.FinalDisposeHandle);
             }
-            returnHandles.FinalExecutionHandle = handle;
 
             return returnHandles;
         }
 
         [BurstCompile]
         [NoAlias]
-        private struct SolverJob : IJob
+        struct SolverJob : IJob
         {
             public NativeArray<MotionVelocity> MotionVelocities;
+            public NativeArray<MotionData> MotionDatas;
+
             public StabilizationData SolverStabilizationData;
 
             [NoAlias]
             public NativeStream.Reader JacobiansReader;
 
-            //@TODO: Unity should have a Allow null safety restriction
             [NativeDisableContainerSafetyRestriction]
             [NoAlias]
             public NativeStream.Writer CollisionEventsWriter;
 
-            //@TODO: Unity should have a Allow null safety restriction
             [NativeDisableContainerSafetyRestriction]
             [NoAlias]
             public NativeStream.Writer TriggerEventsWriter;
 
-            //@TODO: Unity should have a Allow null safety restriction
             [NativeDisableContainerSafetyRestriction]
             [NoAlias]
             public NativeStream.Writer ImpulseEventsWriter;
 
-            public StepInput stepInput;
+            public StepInput StepInput;
+            public DispatchPairSequencer.SolverSchedulerInfo SolverSchedulerInfo;
 
             public void Execute()
             {
-                SolveJacobians(ref JacobiansReader, MotionVelocities, stepInput,
+                SolveJacobians( SolverSchedulerInfo, JacobiansReader, ref MotionVelocities, MotionDatas, StepInput,
                     ref CollisionEventsWriter, ref TriggerEventsWriter, ref ImpulseEventsWriter, SolverStabilizationData);
             }
         }
 
         /// <summary>   Solve the Jacobians stored in the simulation context. </summary>
-        internal static void SolveJacobians(ref NativeStream.Reader jacobiansReader,
-            NativeArray<MotionVelocity> motionVelocities, StepInput stepInput,
+        internal static void SolveJacobians(in DispatchPairSequencer.SolverSchedulerInfo solverSchedulerInfo, in NativeStream.Reader jacobiansReader,
+            ref NativeArray<MotionVelocity> motionVelocities, in NativeArray<MotionData> motionDatas, StepInput stepInput,
+            ref NativeStream.Writer collisionEventsWriter, ref NativeStream.Writer triggerEventsWriter,
+            ref NativeStream.Writer impulseEventsWriter, StabilizationData solverStabilizationData)
+        {
+#if DEBUG_LOG_SOLVER_INFO
+            {
+                int numIslands;
+                if ((numIslands = solverSchedulerInfo.DirectPairsDirectScheduling.DispatchPairIslandInfoCounts.Length) > 0)
+                {
+                    Debug.Log($"Direct Solver: processing {numIslands} islands");
+                }
+            }
+#endif
+
+            // In the single-threaded solver, we expect at max 1 work item for the iterative solvers
+            SafetyChecks.CheckInRangeAndThrow(solverSchedulerInfo.IterativePairsIterativeScheduling.NumWorkItems[0], new int2(0, 1), "NumWorkItems");
+            SafetyChecks.CheckInRangeAndThrow(solverSchedulerInfo.CouplingPairsIterativeScheduling.NumWorkItems[0], new int2(0, 1), "NumWorkItems");
+            SafetyChecks.CheckInRangeAndThrow(solverSchedulerInfo.DirectPairsIterativeScheduling.NumWorkItems[0], new int2(0, 1), "NumWorkItems");
+
+            // Check if coupling between direct and iterative solver is needed.
+            // If not, simply solve direct and iterative constraints separately, and only once.
+            // Otherwise, use coupling approach.
+            if (solverSchedulerInfo.CouplingPairsIterativeScheduling.NumDispatchPairs.Value == 0)
+            {
+                if (solverSchedulerInfo.IterativePairsIterativeScheduling.NumDispatchPairs.Value > 0)
+                {
+                    IterativeSolver(ref motionVelocities, jacobiansReader,
+                        ref collisionEventsWriter, ref triggerEventsWriter, ref impulseEventsWriter,
+                        solverSchedulerInfo.IterativePairsIterativeScheduling.FirstWorkItemIndex.Value,
+                        stepInput, solverStabilizationData);
+                }
+
+                for (int islandIndex = 0; islandIndex < solverSchedulerInfo.DirectPairsDirectScheduling.DispatchPairIslandInfoCounts.Length; ++islandIndex)
+                {
+                    DirectSolver(solverSchedulerInfo.DirectPairsDirectScheduling, islandIndex, jacobiansReader, ref motionVelocities, motionDatas, stepInput);
+                }
+
+                if (stepInput.ExportEventsInThisSubstep)
+                {
+                    // Export events for all constraints processed by the direct solver:
+                    var workItemIndex = solverSchedulerInfo.DirectPairsIterativeScheduling.FirstWorkItemIndex.Value;
+                    var workItemIndexEnd = workItemIndex + solverSchedulerInfo.DirectPairsIterativeScheduling.NumWorkItems[0];
+                    for (; workItemIndex < workItemIndexEnd; ++workItemIndex)
+                    {
+                        ExportEvents(workItemIndex, stepInput.Timestep, jacobiansReader, motionVelocities,
+                            ref collisionEventsWriter, ref triggerEventsWriter, ref impulseEventsWriter);
+                    }
+                }
+            }
+            else // coupling between iterative and direct constraints required:
+            {
+#if DEBUG_LOG_SOLVER_INFO
+                Debug.Log("Coupled Direct and Iterative Solver");
+#endif
+
+                // Phase 1: Pre-solve
+                // all iterative constraints
+
+                // Disable exporting events during the first phase since events are exported by the iterative solver
+                // in the last iteration during the post-solve.
+                // This includes events for constraints processed by the direct solver.
+                var oldDisableEvents = stepInput.DisableExportEvents;
+                stepInput.DisableExportEvents = true;
+
+                IterativeSolver(solverSchedulerInfo, jacobiansReader, ref motionVelocities, stepInput,
+                    ref collisionEventsWriter, ref triggerEventsWriter, ref impulseEventsWriter, solverStabilizationData);
+
+                // Phase 2: Solve
+                // direct solver constraints
+                for (int islandIndex = 0; islandIndex < solverSchedulerInfo.DirectPairsDirectScheduling.DispatchPairIslandInfoCounts.Length; ++islandIndex)
+                {
+                    DirectSolver(solverSchedulerInfo.DirectPairsDirectScheduling, islandIndex, jacobiansReader, ref motionVelocities, motionDatas, stepInput);
+                }
+
+                // Phase 3: Post-solve
+                // all iterative constraints again
+
+                // re-enable events for this phase
+                stepInput.DisableExportEvents = oldDisableEvents;
+
+                IterativeSolver(solverSchedulerInfo, jacobiansReader, ref motionVelocities, stepInput,
+                    ref collisionEventsWriter, ref triggerEventsWriter, ref impulseEventsWriter, solverStabilizationData);
+            }
+        }
+
+        static void IterativeSolver(in DispatchPairSequencer.SolverSchedulerInfo solverSchedulerInfo,
+            in NativeStream.Reader jacobiansReader, ref NativeArray<MotionVelocity> motionVelocities, StepInput stepInput,
             ref NativeStream.Writer collisionEventsWriter, ref NativeStream.Writer triggerEventsWriter,
             ref NativeStream.Writer impulseEventsWriter, StabilizationData solverStabilizationData)
         {
@@ -1011,9 +1319,59 @@ namespace Unity.Physics
             {
                 stepInput.CurrentSolverIteration = solverIterationId;
 
-                Solve(motionVelocities, ref jacobiansReader,
+                // pure iterative constraints:
+                if (solverSchedulerInfo.IterativePairsIterativeScheduling.NumDispatchPairs.Value > 0)
+                {
+                    IterativeSolverIteration(ref motionVelocities, jacobiansReader,
+                        ref collisionEventsWriter, ref triggerEventsWriter, ref impulseEventsWriter,
+                        solverSchedulerInfo.IterativePairsIterativeScheduling.FirstWorkItemIndex.Value,
+                        stepInput, solverStabilizationData);
+                }
+
+                // direct constraints run with iterative solver:
+                if (solverSchedulerInfo.DirectPairsIterativeScheduling.NumDispatchPairs.Value > 0)
+                {
+                    IterativeSolverIteration(ref motionVelocities, jacobiansReader,
+                        ref collisionEventsWriter, ref triggerEventsWriter, ref impulseEventsWriter,
+                        solverSchedulerInfo.DirectPairsIterativeScheduling.FirstWorkItemIndex.Value,
+                        stepInput, solverStabilizationData);
+                }
+
+                // iterative coupling constraints:
+                if (solverSchedulerInfo.CouplingPairsIterativeScheduling.NumDispatchPairs.Value > 0)
+                {
+                    IterativeSolverIteration(ref motionVelocities, jacobiansReader,
+                        ref collisionEventsWriter, ref triggerEventsWriter, ref impulseEventsWriter,
+                        solverSchedulerInfo.CouplingPairsIterativeScheduling.FirstWorkItemIndex.Value,
+                        stepInput, solverStabilizationData);
+                }
+
+                if (solverStabilizationData.StabilizationHeuristicSettings.EnableSolverStabilization)
+                {
+                    StabilizeVelocities(motionVelocities, stepInput.IsFirstSolverIteration, stepInput.Timestep, solverStabilizationData);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sequential impulse solver with constraint regularization for modeling visco-elastic constraint behavior using
+        /// spring frequency and damping ratio as model parameters. For details of the regularization procedure see
+        /// <see cref="JacobianUtilities.CalculateConstraintTauAndDamping"/>.
+        /// </summary>
+        static void IterativeSolver(ref NativeArray<MotionVelocity> motionVelocities, in NativeStream.Reader jacobiansReader,
+            ref NativeStream.Writer collisionEventsWriter, ref NativeStream.Writer triggerEventsWriter, ref NativeStream.Writer impulseEventsWriter,
+            int workItemIndex, StepInput stepInput, in StabilizationData solverStabilizationData)
+        {
+#if DEBUG_LOG_SOLVER_INFO
+            Debug.Log("Sequential Impulse Solver");
+#endif
+            for (int solverIterationId = 0; solverIterationId < stepInput.NumSolverIterations; solverIterationId++)
+            {
+                stepInput.CurrentSolverIteration = solverIterationId;
+
+                IterativeSolverIteration(ref motionVelocities, jacobiansReader,
                     ref collisionEventsWriter, ref triggerEventsWriter, ref impulseEventsWriter,
-                    0, stepInput, solverStabilizationData);
+                    workItemIndex, stepInput, solverStabilizationData);
 
                 if (solverStabilizationData.StabilizationHeuristicSettings.EnableSolverStabilization)
                 {
@@ -1024,7 +1382,7 @@ namespace Unity.Physics
 
         [BurstCompile]
         [NoAlias]
-        private struct ParallelSolverJob : IJobParallelFor
+        struct ParallelIterativeSolverJob : IJobParallelFor
         {
             [NativeDisableParallelForRestriction]
             public NativeArray<MotionVelocity> MotionVelocities;
@@ -1035,12 +1393,10 @@ namespace Unity.Physics
             [NoAlias]
             public NativeStream.Reader JacobiansReader;
 
-            //@TODO: Unity should have a Allow null safety restriction
             [NativeDisableContainerSafetyRestriction]
             [NoAlias]
             public NativeStream.Writer CollisionEventsWriter;
 
-            //@TODO: Unity should have a Allow null safety restriction
             [NativeDisableContainerSafetyRestriction]
             [NoAlias]
             public NativeStream.Writer TriggerEventsWriter;
@@ -1050,38 +1406,126 @@ namespace Unity.Physics
             public NativeStream.Writer ImpulseEventsWriter;
 
             [ReadOnly]
-            public NativeArray<DispatchPairSequencer.SolverSchedulerInfo.SolvePhaseInfo> Phases;
+            public DispatchPairSequencer.IterativeSolverSchedulerInfo IterativeSolverSchedulerInfo;
 
             public int PhaseIndex;
             public StepInput stepInput;
 
-            public void Execute(int workItemIndex)
+            public void Execute(int phaseWorkItemOffset)
             {
-                int workItemStartIndexOffset = Phases[PhaseIndex].FirstWorkItemIndex;
-                if (stepInput.IsLastSolverIteration)
+                int firstWorkItemIndex = IterativeSolverSchedulerInfo.FirstWorkItemIndex.Value + IterativeSolverSchedulerInfo.PhaseInfo[PhaseIndex].FirstWorkItemIndexOffset;
+                int workItemIndex = firstWorkItemIndex + phaseWorkItemOffset;
+                if (stepInput.ExportEventsInThisIteration)
                 {
-                    CollisionEventsWriter.PatchMinMaxRange(workItemIndex + workItemStartIndexOffset);
-                    TriggerEventsWriter.PatchMinMaxRange(workItemIndex + workItemStartIndexOffset);
-                    ImpulseEventsWriter.PatchMinMaxRange(workItemIndex + workItemStartIndexOffset);
+                    CollisionEventsWriter.PatchMinMaxRange(workItemIndex);
+                    TriggerEventsWriter.PatchMinMaxRange(workItemIndex);
+                    ImpulseEventsWriter.PatchMinMaxRange(workItemIndex);
                 }
 
-                Solve(MotionVelocities, ref JacobiansReader,
+                IterativeSolverIteration(ref MotionVelocities, JacobiansReader,
                     ref CollisionEventsWriter, ref TriggerEventsWriter, ref ImpulseEventsWriter,
-                    workItemIndex + workItemStartIndexOffset, stepInput, SolverStabilizationData);
+                    workItemIndex, stepInput, SolverStabilizationData);
             }
         }
 
-        private static void Solve(
-            NativeArray<MotionVelocity> motionVelocities,
-            [NoAlias] ref NativeStream.Reader jacobianReader,
+        static JobHandle ScheduleIterativeSolver(in DynamicsWorld dynamicsWorld, in DispatchPairSequencer.SolverSchedulerInfo solverSchedulerInfo,
+            in NativeStream jacobians, StepInput stepInput, in StabilizationData solverStabilizationData,
+            in NativeStream collisionEvents, in NativeStream triggerEvents, in NativeStream impulseEvents, JobHandle inputDependencies)
+        {
+            float3 gravityNormalized = float3.zero;
+            if (solverStabilizationData.StabilizationHeuristicSettings.EnableSolverStabilization)
+            {
+                gravityNormalized = math.normalizesafe(solverStabilizationData.Gravity);
+            }
+
+            var handle = inputDependencies;
+
+            for (int iSolverIteration = 0; iSolverIteration < stepInput.NumSolverIterations; iSolverIteration++)
+            {
+                stepInput.CurrentSolverIteration = iSolverIteration;
+
+                // pure iterative constraints:
+                handle = ScheduleIterativeSolverPhasedIteration(solverSchedulerInfo.IterativePairsIterativeScheduling,
+                    jacobians, dynamicsWorld.MotionVelocities, stepInput, solverStabilizationData, collisionEvents, triggerEvents, impulseEvents,
+                    handle);
+
+                // direct constraints run with iterative solver:
+                handle = ScheduleIterativeSolverPhasedIteration(solverSchedulerInfo.DirectPairsIterativeScheduling,
+                    jacobians, dynamicsWorld.MotionVelocities, stepInput, solverStabilizationData, collisionEvents, triggerEvents, impulseEvents,
+                    handle);
+
+                // iterative coupling constraints:
+                handle = ScheduleIterativeSolverPhasedIteration(solverSchedulerInfo.CouplingPairsIterativeScheduling,
+                    jacobians, dynamicsWorld.MotionVelocities, stepInput, solverStabilizationData, collisionEvents, triggerEvents, impulseEvents,
+                    handle);
+
+                // Stabilize velocities
+                if (solverStabilizationData.StabilizationHeuristicSettings.EnableSolverStabilization)
+                {
+                    var stabilizeVelocitiesJob = new StabilizeVelocitiesJob
+                    {
+                        MotionVelocities = dynamicsWorld.MotionVelocities,
+                        SolverStabilizationData = solverStabilizationData,
+                        GravityPerStep = solverStabilizationData.Gravity * stepInput.Timestep, //job doesn't need gravity in stabilize struct
+                        GravityNormalized = gravityNormalized,
+                        IsFirstIteration = stepInput.IsFirstSolverIteration
+                    };
+
+                    handle = stabilizeVelocitiesJob.Schedule(dynamicsWorld.NumMotions, 64, handle);
+                }
+            }
+            return handle;
+        }
+
+        static JobHandle ScheduleIterativeSolverPhasedIteration(in DispatchPairSequencer.IterativeSolverSchedulerInfo solverSchedulerInfo,
+            in NativeStream jacobians, in NativeArray<MotionVelocity> motionVelocities, in StepInput stepInput, in StabilizationData solverStabilizationData,
+            in NativeStream collisionEvents, in NativeStream triggerEvents, in NativeStream impulseEvents, JobHandle inputDependencies)
+        {
+            var numPhases = solverSchedulerInfo.NumActivePhases[0];
+            var solverHandle = inputDependencies;
+            for (int phaseId = 0; phaseId < numPhases; phaseId++)
+            {
+                var job = new ParallelIterativeSolverJob
+                {
+                    JacobiansReader = jacobians.AsReader(),
+                    PhaseIndex = phaseId,
+                    IterativeSolverSchedulerInfo = solverSchedulerInfo,
+                    MotionVelocities = motionVelocities,
+                    SolverStabilizationData = solverStabilizationData,
+                    stepInput = stepInput
+                };
+
+                // Only initialize event writers if required
+                if (stepInput.ExportEventsInThisIteration)
+                {
+                    job.CollisionEventsWriter = collisionEvents.AsWriter();
+                    job.TriggerEventsWriter = triggerEvents.AsWriter();
+                    job.ImpulseEventsWriter = impulseEvents.AsWriter();
+                }
+
+                var phaseInfo = solverSchedulerInfo.PhaseInfo[phaseId];
+
+                // Note: If we have duplicate body indices across work items in this phase we need to process the phase
+                // sequentially to prevent data races. In this case, we choose a large batch size (batch equal to number of work items)
+                // to prevent any parallelization of the work.
+                int batchSize = phaseInfo.ContainsDuplicateIndices ? phaseInfo.NumWorkItems : 1;
+                solverHandle = job.Schedule(phaseInfo.NumWorkItems, batchSize, solverHandle);
+            }
+
+            return solverHandle;
+        }
+
+        static void IterativeSolverIteration(
+            ref NativeArray<MotionVelocity> motionVelocities,
+            [NoAlias] in NativeStream.Reader jacobianReader,
             [NoAlias] ref NativeStream.Writer collisionEventsWriter,
             [NoAlias] ref NativeStream.Writer triggerEventsWriter,
             [NoAlias] ref NativeStream.Writer impulseEventsWriter,
             int workItemIndex,
-            StepInput stepInput,
-            StabilizationData solverStabilizationData)
+            in StepInput stepInput,
+            in StabilizationData solverStabilizationData)
         {
-            if (stepInput.IsLastSubstepAndLastSolverIteration)
+            if (stepInput.ExportEventsInThisIteration)
             {
                 collisionEventsWriter.BeginForEachIndex(workItemIndex);
                 triggerEventsWriter.BeginForEachIndex(workItemIndex);
@@ -1097,7 +1541,7 @@ namespace Unity.Physics
                 ref JacobianHeader header = ref jacIterator.ReadJacobianHeader();
 
                 // Static-static pairs should have been filtered during broadphase overlap test
-                Assert.IsTrue(header.BodyPair.BodyIndexA < motionVelocities.Length || header.BodyPair.BodyIndexB < motionVelocities.Length);
+                SafetyChecks.CheckAreEqualAndThrow(true, header.BodyPair.BodyIndexA < motionVelocities.Length || header.BodyPair.BodyIndexB < motionVelocities.Length);
 
                 // Get the motion pair
                 MotionVelocity velocityA = header.BodyPair.BodyIndexA < motionVelocities.Length ?
@@ -1131,7 +1575,7 @@ namespace Unity.Physics
                 }
             }
 
-            if (stepInput.IsLastSubstepAndLastSolverIteration)
+            if (stepInput.ExportEventsInThisIteration)
             {
                 collisionEventsWriter.EndForEachIndex();
                 triggerEventsWriter.EndForEachIndex();
@@ -1139,7 +1583,131 @@ namespace Unity.Physics
             }
         }
 
-        #endregion //SolveJacobians
+        #endregion // SolveJacobians
+
+        #region Events
+
+        [BurstCompile]
+        struct ParallelExportEventsJob : IJobParallelFor
+        {
+            public NativeStream.Reader JacobiansReader;
+
+            [NativeDisableContainerSafetyRestriction]
+            public NativeArray<MotionVelocity> MotionVelocities;
+
+            public NativeStream.Writer CollisionEventsWriter;
+            public NativeStream.Writer TriggerEventsWriter;
+            public NativeStream.Writer ImpulseEventsWriter;
+
+            [ReadOnly]
+            public DispatchPairSequencer.IterativeSolverSchedulerInfo IterativeSolverSchedulerInfo;
+
+            public float Timestep;
+
+            public void Execute(int workItemIndexOffset)
+            {
+                var workItemIndex = IterativeSolverSchedulerInfo.FirstWorkItemIndex.Value + workItemIndexOffset;
+
+                CollisionEventsWriter.PatchMinMaxRange(workItemIndex);
+                TriggerEventsWriter.PatchMinMaxRange(workItemIndex);
+                ImpulseEventsWriter.PatchMinMaxRange(workItemIndex);
+
+                ExportEvents(workItemIndex, Timestep, JacobiansReader, MotionVelocities,
+                    ref CollisionEventsWriter, ref TriggerEventsWriter, ref ImpulseEventsWriter);
+            }
+        }
+
+        static void ExportEvents(int workItemIndex, float timestep, in NativeStream.Reader jacobiansReader, in NativeArray<MotionVelocity> motionVelocities,
+            ref NativeStream.Writer collisionEventsWriter, ref NativeStream.Writer triggerEventsWriter, ref NativeStream.Writer impulseEventsWriter)
+        {
+            collisionEventsWriter.BeginForEachIndex(workItemIndex);
+            triggerEventsWriter.BeginForEachIndex(workItemIndex);
+            impulseEventsWriter.BeginForEachIndex(workItemIndex);
+
+            var iterator = new JacobianIterator(jacobiansReader, workItemIndex);
+            while (iterator.HasJacobiansLeft())
+            {
+                ref var header = ref iterator.ReadJacobianHeader();
+
+                switch (header.Type)
+                {
+                    case JacobianType.Contact:
+                        if ((header.Flags & JacobianFlags.EnableCollisionEvents) != 0)
+                        {
+                            ref var contactJac = ref header.AccessBaseJacobian<ContactJacobian>();
+
+                            if (!header.IsContactDynamic)
+                            {
+                                MotionVelocity velA = header.BodyPair.BodyIndexA < motionVelocities.Length ?
+                                    motionVelocities[header.BodyPair.BodyIndexA] : MotionVelocity.Zero;
+                                MotionVelocity velB = header.BodyPair.BodyIndexB < motionVelocities.Length ?
+                                    motionVelocities[header.BodyPair.BodyIndexB] : MotionVelocity.Zero;
+
+                                contactJac.ExportInfMassEvent(ref header, velA, velB, timestep, ref collisionEventsWriter);
+                            }
+                            else
+                            {
+                                bool forceCollisionEvent = false;
+                                for (int i = 0; i < contactJac.BaseJacobian.NumContacts; ++i)
+                                {
+                                    ref var contactAngularJac = ref header.AccessAngularJacobian(i);
+
+                                    // Force contact event even when no impulse is applied, but there is penetration.
+                                    // This includes kinematic/kinematic or kinematic/static pairs.
+                                    forceCollisionEvent |= contactAngularJac.VelToReachCp > 0.0f;
+                                }
+
+                                if (contactJac.SumImpulsesOverSubsteps > 0.0f || forceCollisionEvent)
+                                {
+                                    contactJac.ExportCollisionEvent(contactJac.SumImpulsesOverSubsteps, ref header, ref collisionEventsWriter);
+                                }
+                            }
+                        }
+                        break;
+
+                    case JacobianType.Trigger:
+                        MotionVelocity velocityA = header.BodyPair.BodyIndexA < motionVelocities.Length ?
+                            motionVelocities[header.BodyPair.BodyIndexA] : MotionVelocity.Zero;
+                        MotionVelocity velocityB = header.BodyPair.BodyIndexB < motionVelocities.Length ?
+                            motionVelocities[header.BodyPair.BodyIndexB] : MotionVelocity.Zero;
+
+                        ref var triggerJac = ref header.AccessBaseJacobian<TriggerJacobian>();
+                        triggerJac.ExportEvent(ref header, velocityA, velocityB, ref triggerEventsWriter);
+
+                        break;
+
+                    case JacobianType.LinearLimit:
+                    case JacobianType.AngularLimit1D:
+                    case JacobianType.AngularLimit2D:
+                    case JacobianType.AngularLimit3D:
+                        if ((header.Flags & JacobianFlags.EnableImpulseEvents) != 0)
+                        {
+                            ref ImpulseEventSolverData impulseEventData = ref header.AccessImpulseEventSolverData();
+
+                            if (math.any(math.abs(impulseEventData.AccumulatedImpulse) > impulseEventData.MaxImpulse))
+                            {
+                                impulseEventsWriter.Write(new ImpulseEventData
+                                {
+                                    Type = header.Type == JacobianType.LinearLimit ? ConstraintType.Linear : ConstraintType.Angular,
+                                    Impulse = impulseEventData.AccumulatedImpulse,
+                                    JointEntity = impulseEventData.JointEntity,
+                                    BodyIndices = header.BodyPair
+                                });
+                            }
+                        }
+                        break;
+                    default:
+                        // Nothing to do for motor joints. These don't support events.
+                        break;
+                }
+            }
+
+            collisionEventsWriter.EndForEachIndex();
+            triggerEventsWriter.EndForEachIndex();
+            impulseEventsWriter.EndForEachIndex();
+        }
+
+        #endregion // Events
 
         #region UpdateInputVelocities
 
@@ -1167,7 +1735,7 @@ namespace Unity.Physics
                 {
                     MotionVelocities = motionVelocities,
                     InputVelocities = inputVelocities,
-                    GravityAcceleration = velocityFromGravity
+                    GravityVelocity = velocityFromGravity
                 };
                 return job.Schedule(motionVelocities.Length, 64, inputDeps);
             }
@@ -1203,11 +1771,11 @@ namespace Unity.Physics
         {
             public NativeArray<MotionVelocity> MotionVelocities;
             public NativeArray<Velocity> InputVelocities;
-            public float3 GravityAcceleration;
+            public float3 GravityVelocity;
 
             public void Execute(int i)
             {
-                ExecuteImpl(i, GravityAcceleration, MotionVelocities, InputVelocities);
+                ExecuteImpl(i, GravityVelocity, MotionVelocities, InputVelocities);
             }
 
             internal static void ExecuteImpl(int i, float3 velocityFromGravity,
@@ -1224,7 +1792,7 @@ namespace Unity.Physics
             }
         }
 
-        #endregion //UpdateInputVelocities
+        #endregion // UpdateInputVelocities
 
         #region ApplyGravityAndUpdateInputVelocities
 
@@ -1232,7 +1800,7 @@ namespace Unity.Physics
         /// 1) updates MotionVelocities with the gravity integrated linear velocity.
         /// 2) updates InputVelocities with the new MotionVelocities Linear and Angular data.
         internal static JobHandle ScheduleApplyGravityAndUpdateInputVelocitiesJob(ref DynamicsWorld world, NativeArray<Velocity> inputVelocities,
-            float3 gravityAcceleration, float timestep, JobHandle inputDeps, bool multiThreaded = true)
+            float3 gravityAcceleration, float timestep, bool enableGyroscopicTorque, JobHandle inputDeps, bool multiThreaded = true)
         {
             if (!multiThreaded)
             {
@@ -1241,7 +1809,8 @@ namespace Unity.Physics
                     MotionVelocities = world.MotionVelocities,
                     InputVelocities = inputVelocities,
                     GravityAcceleration = gravityAcceleration,
-                    Timestep = timestep
+                    Timestep = timestep,
+                    EnableGyroscopicTorque = enableGyroscopicTorque
                 };
                 return job.Schedule(inputDeps);
             }
@@ -1252,7 +1821,8 @@ namespace Unity.Physics
                     MotionVelocities = world.MotionVelocities,
                     InputVelocities = inputVelocities,
                     GravityAcceleration = gravityAcceleration,
-                    Timestep = timestep
+                    Timestep = timestep,
+                    EnableGyroscopicTorque = enableGyroscopicTorque
                 };
                 return job.Schedule(world.MotionVelocities.Length, 64, inputDeps);
             }
@@ -1265,10 +1835,11 @@ namespace Unity.Physics
             public NativeArray<Velocity> InputVelocities;
             public float3 GravityAcceleration;
             public float Timestep;
+            public bool EnableGyroscopicTorque;
 
             public void Execute()
             {
-                ApplyGravityAndUpdateInputVelocities(MotionVelocities, InputVelocities, GravityAcceleration, Timestep);
+                ApplyGravityAndUpdateInputVelocities(MotionVelocities, InputVelocities, GravityAcceleration, Timestep, EnableGyroscopicTorque);
             }
         }
 
@@ -1277,11 +1848,12 @@ namespace Unity.Physics
         /// 2) updates InputVelocities with the new MotionVelocities Linear and Angular data.
         /// </summary>
         internal static void ApplyGravityAndUpdateInputVelocities(NativeArray<MotionVelocity> motionVelocities,
-            NativeArray<Velocity> inputVelocities, float3 gravityAcceleration, float timestep)
+            NativeArray<Velocity> inputVelocities, float3 gravityAcceleration, float timestep, bool enableGyroscopicTorque)
         {
             for (int i = 0; i < motionVelocities.Length; i++)
             {
-                ParallelApplyGravityAndUpdateInputVelocitiesJob.ExecuteImpl(i, motionVelocities, inputVelocities, gravityAcceleration, timestep);
+                ParallelApplyGravityAndUpdateInputVelocitiesJob.ExecuteImpl(i, motionVelocities, inputVelocities,
+                    gravityAcceleration, timestep, enableGyroscopicTorque);
             }
         }
 
@@ -1292,19 +1864,26 @@ namespace Unity.Physics
             public NativeArray<Velocity> InputVelocities;
             public float3 GravityAcceleration;
             public float Timestep;
+            public bool EnableGyroscopicTorque;
 
             public void Execute(int i)
             {
-                ExecuteImpl(i, MotionVelocities, InputVelocities, GravityAcceleration, Timestep);
+                ExecuteImpl(i, MotionVelocities, InputVelocities, GravityAcceleration, Timestep, EnableGyroscopicTorque);
             }
 
             internal static void ExecuteImpl(int i, NativeArray<MotionVelocity> motionVelocities,
-                NativeArray<Velocity> inputVelocities, float3 gravityAcceleration, float timestep)
+                NativeArray<Velocity> inputVelocities, float3 gravityAcceleration, float timestep, bool enableGyroscopicTorque)
             {
                 MotionVelocity motionVelocity = motionVelocities[i];
 
                 // Apply gravity
                 motionVelocity.LinearVelocity += gravityAcceleration * motionVelocity.GravityFactor * timestep;
+
+                if (enableGyroscopicTorque && !motionVelocity.IsKinematic)
+                {
+                    // Apply gyroscopic torque to generalized velocity.
+                    ApplyGyroscopicTorque(ref motionVelocity, timestep);
+                }
 
                 // Write back
                 motionVelocities[i] = motionVelocity;
@@ -1318,7 +1897,7 @@ namespace Unity.Physics
             }
         }
 
-        #endregion //ApplyGravityAndUpdateInputVelocities
+        #endregion // ApplyGravityAndUpdateInputVelocities
 
         #region StabilizationHeuristics
 
@@ -1468,7 +2047,7 @@ namespace Unity.Physics
             }
         }
 
-        #endregion //StabilizationHeuristics
+        #endregion // StabilizationHeuristics
 
         #region Implementation
 
@@ -1538,8 +2117,7 @@ namespace Unity.Physics
         }
 
         // Gets a body's motion, even if the body is static
-        // TODO - share code with GetMotions()?
-        private static void GetMotion([NoAlias] ref PhysicsWorld world, int bodyIndex,
+        private static void GetMotion([NoAlias] in PhysicsWorld world, int bodyIndex,
             [NoAlias] out MotionVelocity velocity, [NoAlias] out MotionData motion)
         {
             if (bodyIndex >= world.MotionVelocities.Length)
@@ -1561,6 +2139,6 @@ namespace Unity.Physics
             }
         }
 
-        #endregion //Implementation
+        #endregion // Implementation
     }
 }

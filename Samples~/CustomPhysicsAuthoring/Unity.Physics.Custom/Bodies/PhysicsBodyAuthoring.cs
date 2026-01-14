@@ -4,9 +4,7 @@ using UnityEngine;
 namespace Unity.Physics.Authoring
 {
     /// <summary>   The physics body authoring. This class cannot be inherited. </summary>
-#if UNITY_2021_2_OR_NEWER
     [Icon(k_IconPath)]
-#endif
     [AddComponentMenu("Entities/Physics/Physics Body")]
     [DisallowMultipleComponent]
     public sealed class PhysicsBodyAuthoring : MonoBehaviour
@@ -103,6 +101,14 @@ namespace Unity.Physics.Authoring
         [SerializeField]
         // Default value to solid unit sphere : https://en.wikipedia.org/wiki/List_of_moments_of_inertia
         float3 m_InertiaTensor = new float3(2f / 5f);
+
+        /// <summary>
+        ///     Specifies the type of solver to be used for resolving collisions involving this body.
+        /// </summary>
+        public SolverType SolverType { get => m_SolverType; set => m_SolverType = value; }
+        [SerializeField]
+        [Tooltip("Specifies the type of solver to be used for resolving collisions involving this body.")]
+        SolverType m_SolverType = Solver.kDefaultSolverType;
 
         public uint WorldIndex { get => m_WorldIndex; set => m_WorldIndex = value; }
         [SerializeField]

@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Unity.Physics.Authoring
 {
     [Serializable]
-    internal struct EulerAngles : IEquatable<EulerAngles>
+    public struct EulerAngles : IEquatable<EulerAngles>
     {
         public static EulerAngles Default => new EulerAngles { RotationOrder = math.RotationOrder.ZXY };
 

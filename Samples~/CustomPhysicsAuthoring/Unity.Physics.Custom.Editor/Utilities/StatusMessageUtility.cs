@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Unity.Physics.Authoring;
 using UnityEditor;
 using UnityEngine;
@@ -56,7 +55,28 @@ namespace Unity.Physics.Editor
         )
         {
             statusMessage = string.Empty;
-            if (matrixStates.Contains(MatrixState.NotValidTRS))
+
+            bool containsNotValidTRS = false;
+            bool containsZeroScale = false;
+            bool containsNonUniformScale = false;
+
+            foreach (var state in matrixStates)
+            {
+                switch (state)
+                {
+                    case MatrixState.NonUniformScale:
+                        containsNonUniformScale = true;
+                        break;
+                    case MatrixState.NotValidTRS:
+                        containsNotValidTRS = true;
+                        break;
+                    case MatrixState.ZeroScale:
+                        containsZeroScale = true;
+                        break;
+                }
+            }
+
+            if (containsNotValidTRS)
             {
                 statusMessage = L10n.Tr(
                     matrixStates.Count == 1
@@ -66,14 +86,14 @@ namespace Unity.Physics.Editor
                 return MessageType.Error;
             }
 
-            if (matrixStates.Contains(MatrixState.ZeroScale))
+            if (containsZeroScale)
             {
                 statusMessage =
                     L10n.Tr(matrixStates.Count == 1 ? "Target has zero scale." : "One or more targets has zero scale.");
                 return MessageType.Warning;
             }
 
-            if (matrixStates.Contains(MatrixState.NonUniformScale))
+            if (containsNonUniformScale)
             {
                 statusMessage = L10n.Tr(
                     matrixStates.Count == 1

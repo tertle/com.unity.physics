@@ -1,7 +1,6 @@
 using NUnit.Framework;
 using Unity.Burst;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.PerformanceTesting;
 using static Unity.Physics.DispatchPairSequencer;
 
@@ -14,7 +13,7 @@ namespace Unity.Physics.Tests.Dynamics.Schedule
     {
         private SolverSchedulerInfo SolverSchedulerInfo;
         private int MaxNumPhases => DispatchPairSequencer.kMaxNumPhases;
-        private int BatchSize => CreateDispatchPairPhasesJob.k_MinBatchSize;
+        private int BatchSize => CreateDispatchPairPhasesJob.kMaxBatchSize;
 
         [SetUp]
         public void SetUp()
@@ -31,17 +30,23 @@ namespace Unity.Physics.Tests.Dynamics.Schedule
         private void CreatePhasedDispatchPairsAndVerify(int numDynamicBodies, NativeArray<DispatchPair> sortedDispatchPairs)
         {
             var phasedDispatchPairs = new NativeArray<DispatchPair>(sortedDispatchPairs.Length, Allocator.Temp);
+            var numDirectPairs = new NativeReference<int>(0, Allocator.Temp);
+            var numCouplingPairs = new NativeReference<int>(0, Allocator.Temp);
+
             var createDispatchPairsJob = new CreateDispatchPairPhasesJob
             {
+                ProcessedPairType = CreateDispatchPairPhasesJob.PairType.Iterative,
                 DispatchPairs = sortedDispatchPairs,
                 NumDynamicBodies = numDynamicBodies,
                 PhasedDispatchPairs = phasedDispatchPairs,
-                SolverSchedulerInfo = SolverSchedulerInfo
+                SolverSchedulerInfo = SolverSchedulerInfo,
+                NumDirectPairs = numDirectPairs,
+                NumCouplingPairs = numCouplingPairs
             };
             createDispatchPairsJob.Execute();
 
             // verify the correctness of the phase info data elements
-            CreateDispatchPairPhasesJob.CheckIntegrity(phasedDispatchPairs, numDynamicBodies, ref SolverSchedulerInfo.PhaseInfo);
+            CreateDispatchPairPhasesJob.CheckIntegrity(phasedDispatchPairs, numDynamicBodies, ref SolverSchedulerInfo.IterativePairsIterativeScheduling.PhaseInfo);
         }
 
         // Tests scheduler with full batches.
@@ -60,26 +65,26 @@ namespace Unity.Physics.Tests.Dynamics.Schedule
 
             var sortedDispatchPairs = new NativeArray<DispatchPair>(20, Allocator.Temp);
             {
-                sortedDispatchPairs[0] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 1 });
-                sortedDispatchPairs[1] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 2 });
-                sortedDispatchPairs[2] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 3 });
-                sortedDispatchPairs[3] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 4 });
-                sortedDispatchPairs[4] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 5 });
-                sortedDispatchPairs[5] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 6 });
-                sortedDispatchPairs[6] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 7 });
-                sortedDispatchPairs[7] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 8 });
-                sortedDispatchPairs[8] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 15 });
-                sortedDispatchPairs[9] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 0, BodyIndexB = 16 });
-                sortedDispatchPairs[10] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 2 });
-                sortedDispatchPairs[11] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 3 });
-                sortedDispatchPairs[12] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 4 });
-                sortedDispatchPairs[13] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 5 });
-                sortedDispatchPairs[14] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 6 });
-                sortedDispatchPairs[15] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 7 });
-                sortedDispatchPairs[16] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 8 });
-                sortedDispatchPairs[17] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 9 });
-                sortedDispatchPairs[18] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 15 });
-                sortedDispatchPairs[19] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = 1, BodyIndexB = 16 });
+                sortedDispatchPairs[0] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 1));
+                sortedDispatchPairs[1] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 2));
+                sortedDispatchPairs[2] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 3));
+                sortedDispatchPairs[3] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 4));
+                sortedDispatchPairs[4] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 5));
+                sortedDispatchPairs[5] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 6));
+                sortedDispatchPairs[6] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 7));
+                sortedDispatchPairs[7] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 8));
+                sortedDispatchPairs[8] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 15));
+                sortedDispatchPairs[9] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(0, 16));
+                sortedDispatchPairs[10] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 2));
+                sortedDispatchPairs[11] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 3));
+                sortedDispatchPairs[12] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 4));
+                sortedDispatchPairs[13] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 5));
+                sortedDispatchPairs[14] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 6));
+                sortedDispatchPairs[15] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 7));
+                sortedDispatchPairs[16] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 8));
+                sortedDispatchPairs[17] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 9));
+                sortedDispatchPairs[18] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 15));
+                sortedDispatchPairs[19] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(1, 16));
             }
 
             CreatePhasedDispatchPairsAndVerify(numDynamicBodies, sortedDispatchPairs);
@@ -112,16 +117,16 @@ namespace Unity.Physics.Tests.Dynamics.Schedule
                 // we can only ever create one per body pair.
                 for (int j = 0; j < BatchSize; ++j)
                 {
-                    sortedDispatchPairs[i * BatchSize + j] = DispatchPair.CreateJoint(new BodyIndexPair { BodyIndexA = bodyIndexA, BodyIndexB = bodyIndexB }, 0, 0);
+                    sortedDispatchPairs[i * BatchSize + j] = DispatchPair.CreateJoint(new BodyIndexPair { BodyIndexA = bodyIndexA, BodyIndexB = bodyIndexB }, 0, false);
                 }
             }
 
             CreatePhasedDispatchPairsAndVerify(numDynamicsBodies, sortedDispatchPairs);
 
             // Verify that we get the maximum number of phases, that the last phase is flagged as sequential, and that it contains 2 dispatch pair batches.
-            Assert.AreEqual(MaxNumPhases, SolverSchedulerInfo.NumActivePhases[0]);
-            Assert.AreEqual(2 * BatchSize, SolverSchedulerInfo.PhaseInfo[MaxNumPhases - 1].DispatchPairCount);
-            Assert.IsTrue(SolverSchedulerInfo.PhaseInfo[MaxNumPhases - 1].ContainsDuplicateIndices);
+            Assert.AreEqual(MaxNumPhases, SolverSchedulerInfo.IterativePairsIterativeScheduling.NumActivePhases[0]);
+            Assert.AreEqual(2 * BatchSize, SolverSchedulerInfo.IterativePairsIterativeScheduling.PhaseInfo[MaxNumPhases - 1].DispatchPairCount);
+            Assert.IsTrue(SolverSchedulerInfo.IterativePairsIterativeScheduling.PhaseInfo[MaxNumPhases - 1].ContainsDuplicateIndices);
         }
 
 #if PHYSICS_ENABLE_PERF_TESTS
@@ -129,12 +134,18 @@ namespace Unity.Physics.Tests.Dynamics.Schedule
         static void CreatePhasedDispatchPairs(int numDynamicBodies, ref NativeArray<DispatchPair> sortedDispatchPairs, ref SolverSchedulerInfo solverSchedulerInfo)
         {
             using var phasedDispatchPairs = new NativeArray<DispatchPair>(sortedDispatchPairs.Length, Allocator.Temp);
+            var numDirectPairs = new NativeReference<int>(0, Allocator.Temp);
+            var numCouplingPairs = new NativeReference<int>(0, Allocator.Temp);
+
             var createDispatchPairsJob = new CreateDispatchPairPhasesJob
             {
+                ProcessedPairType = CreateDispatchPairPhasesJob.PairType.Iterative,
                 DispatchPairs = sortedDispatchPairs,
                 NumDynamicBodies = numDynamicBodies,
                 PhasedDispatchPairs = phasedDispatchPairs,
-                SolverSchedulerInfo = solverSchedulerInfo
+                SolverSchedulerInfo = solverSchedulerInfo,
+                NumDirectPairs = numDirectPairs,
+                NumCouplingPairs = numCouplingPairs
             };
             createDispatchPairsJob.Execute();
         }
@@ -159,7 +170,7 @@ namespace Unity.Physics.Tests.Dynamics.Schedule
                 var bodyIndexA = rng.NextInt(numDynamicBodies);
                 var bodyIndexB = rng.NextInt(numBodies);
 
-                int allowCollision = i % 2; // every other joint pair will allow collision
+                bool allowCollision = i % 2 == 1; // every other joint pair will allow collision
                 sortedDispatchPairs[pairIndex++] = DispatchPair.CreateJoint(new BodyIndexPair { BodyIndexA = bodyIndexA, BodyIndexB = bodyIndexB }, i, allowCollision);
             }
 
@@ -169,13 +180,10 @@ namespace Unity.Physics.Tests.Dynamics.Schedule
                 var bodyIndexA = rng.NextInt(numDynamicBodies);
                 var bodyIndexB = rng.NextInt(numBodies);
 
-                sortedDispatchPairs[pairIndex++] = DispatchPair.CreateCollisionPair(new BodyIndexPair { BodyIndexA = bodyIndexA, BodyIndexB = bodyIndexB });
+                sortedDispatchPairs[pairIndex++] = DispatchPair.CreateCollisionPair(new Broadphase.OverlapResult(bodyIndexA, bodyIndexB));
             }
 
-            unsafe
-            {
-                NativeSortExtension.Sort((ulong*)sortedDispatchPairs.GetUnsafePtr(), sortedDispatchPairs.Length);
-            }
+            DispatchPairSequencer.SortDispatchPairs(sortedDispatchPairs);
 
             Measure.Method(() =>
                 CreatePhasedDispatchPairs(numDynamicBodies, ref sortedDispatchPairs, ref SolverSchedulerInfo)).

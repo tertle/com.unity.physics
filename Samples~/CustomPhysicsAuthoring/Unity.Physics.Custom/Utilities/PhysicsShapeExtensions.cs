@@ -35,7 +35,6 @@ namespace Unity.Physics.Authoring
 
         internal static Material GetMaterial(this PhysicsShapeAuthoring shape)
         {
-            // TODO: TBD how we will author editor content for other shape flags
             return new Material
             {
                 Friction = shape.Friction.Value,
@@ -44,7 +43,7 @@ namespace Unity.Physics.Authoring
                 RestitutionCombinePolicy = shape.Restitution.CombineMode,
                 CollisionResponse = shape.CollisionResponse,
                 CustomTags = shape.CustomTags.Value,
-                EnableDetailedStaticMeshCollision = shape.DetailedStaticMeshCollision.Value
+                EnableDetailedStaticMeshCollision = shape.DetailedStaticMeshCollision.Value,
             };
         }
 

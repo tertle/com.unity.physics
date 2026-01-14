@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Unity.Physics.Authoring
@@ -26,7 +25,7 @@ namespace Unity.Physics.Authoring
         /// </summary>
         public IReadOnlyList<string> TagNames => m_TagNames;
         [SerializeField]
-        string[] m_TagNames = Enumerable.Range(0, 8).Select(i => string.Empty).ToArray();
+        string[] m_TagNames = { string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty };
 
         void OnValidate()
         {

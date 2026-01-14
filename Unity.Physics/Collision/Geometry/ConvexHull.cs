@@ -23,7 +23,7 @@ namespace Unity.Physics
             public bool Equals(Face other) => FirstIndex.Equals(other.FirstIndex) && NumVertices.Equals(other.NumVertices) && MinHalfAngleCompressed.Equals(other.MinHalfAngleCompressed);
         }
 
-        [StructLayout(LayoutKind.Sequential, Size = 4)] // extra 1 byte padding to match Havok
+        [StructLayout(LayoutKind.Sequential, Size = 4)]
         public struct Edge : IEquatable<Edge>
         {
             public short FaceIndex;             // index into Faces array

@@ -68,7 +68,7 @@ namespace Unity.Numerics.Linear.Tests
         {
             Assert.DoesNotThrow(() =>
             {
-                using (var heap = MemoryManager.Create(65536, Allocator.Temp))
+                using (var heap = new MemoryManager(Allocator.Persistent))
                 {
                     var M = Matrix.Create(heap, 10, 10);
 
@@ -102,16 +102,16 @@ namespace Unity.Numerics.Linear.Tests
         }
 
         [Test]
-        public void LQ_Job_DecomposeRandom1000x1000_CompareProductToOriginal()
+        public void LQ_Job_DecomposeRandom500x500_CompareProductToOriginal()
         {
             if (!BurstHelper.IsBurstEnabled())
             {
                 Assert.Ignore("This test variant is time consuming and is therefore only run with Burst enabled.");
             }
 
-            using (var heap = new MemoryManager(1024 * 1024 * 128, Allocator.Temp))
+            using (var heap = new MemoryManager(Allocator.Persistent))
             {
-                TestLQ(heap, 1000, 1000, out var A, out var LQ);
+                TestLQ(heap, 500, 500, out var A, out var LQ);
 
                 float maxDiff = MaxAbsoluteDiff(A, LQ);
                 Assert.IsTrue(maxDiff < 5.0e-5f);

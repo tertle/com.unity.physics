@@ -8,33 +8,24 @@ namespace Unity.Physics
     [NoAlias]
     struct LinearVelocityMotorJacobian
     {
-        // Pivot positions in motion space
-        public float3 PivotAinA;
-        public float3 PivotBinB;
+        // Anchor frames in motion space
+        public MTransform AnchorFrameInBodyA;
+        public MTransform AnchorFrameInBodyB;
 
         public float3 Target; //a vector of the motor axis with motor target
-
-        // Pivot distance limits
-        public float MinDistance;
-        public float MaxDistance;
 
         // Motion transforms before solving
         public RigidTransform WorldFromA;
         public RigidTransform WorldFromB;
 
-        // If the constraint limits 1 DOF, this is the constrained axis.
-        // If the constraint limits 2 DOF, this is the free axis.
-        // If the constraint limits 3 DOF, this is unused and set to float3.zero
+        // Motorized prismatic axis, in body B space
         public float3 AxisInB;
 
-        // True if the jacobian limits one degree of freedom
-        public bool Is1D;
+        // index of the motorized prismatic axis in both anchor frames
+        public int AxisIndex;
 
         // Position error at the beginning of the step
         public float InitialError;
-
-        // Fraction of the position error to correct per step
-        public float Tau;
 
         // Fraction of the velocity error to correct per step
         public float Damping;
@@ -51,17 +42,15 @@ namespace Unity.Physics
             MotionData motionA, MotionData motionB,
             Constraint constraint, float tau, float damping)
         {
-            // Motor drive is independent of bodyA rotation, which drives relative to orientation of bodyB
-            PivotAinA = aFromConstraint.Translation;
-            PivotBinB = bFromConstraint.Translation;
+            AnchorFrameInBodyA = aFromConstraint;
+            AnchorFrameInBodyB = bFromConstraint;
 
+            // Motor drive is independent of bodyA rotation, which drives relative to orientation of bodyB
+
+            AxisIndex = constraint.ConstrainedAxis1D;
             AxisInB = bFromConstraint.Rotation[constraint.ConstrainedAxis1D];
             Target = AxisInB * constraint.Target[constraint.ConstrainedAxis1D];  // is velocity vector relative to bodyB, in m/s
 
-            Is1D = true;
-            MinDistance = constraint.Min;
-            MaxDistance = constraint.Max;
-            Tau = tau;
             Damping = damping;
 
             MaxImpulseOfMotor = math.abs(constraint.MaxImpulse.x); //using as magnitude, y&z components are unused
@@ -100,8 +89,8 @@ namespace Unity.Physics
             }
 
             // Calculate the angulars
-            CalculateAngulars(PivotAinA, futureWorldFromA.Rotation, out float3 angA0, out float3 angA1, out float3 angA2);
-            CalculateAngulars(PivotBinB, futureWorldFromB.Rotation, out float3 angB0, out float3 angB1, out float3 angB2);
+            CalculateAngulars(AnchorFrameInBodyA.Translation, futureWorldFromA.Rotation, out float3 angA0, out float3 angA1, out float3 angA2);
+            CalculateAngulars(AnchorFrameInBodyB.Translation, futureWorldFromB.Rotation, out float3 angB0, out float3 angB1, out float3 angB2);
 
             // Calculate effective mass
             float3 EffectiveMassDiag, EffectiveMassOffDiag;

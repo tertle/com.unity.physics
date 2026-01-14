@@ -144,7 +144,7 @@ namespace Unity.Physics
             // Calculate the impulse to correct the error
             float3 solveError = solveDistanceError * futureDirection;
             float3x3 effectiveMass = JacobianUtilities.BuildSymmetricMatrix(effectiveMassDiag, effectiveMassOffDiag);
-            float3 impulse = math.mul(effectiveMass, solveError) * stepInput.InvTimestep;
+            float3 impulse = math.mul(effectiveMass, solveError) * Solver.CalculateInvTimestep(stepInput.Timestep);
             impulse = JacobianUtilities.CapImpulse(impulse, ref AccumulatedImpulsePerAxis, MaxImpulseOfMotor);
 
             // Apply the impulse

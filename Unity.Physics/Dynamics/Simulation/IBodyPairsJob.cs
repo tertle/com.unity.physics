@@ -22,7 +22,6 @@ namespace Unity.Physics
         void Execute(ref ModifiableBodyPair pair);
     }
 
-#if !HAVOK_PHYSICS_EXISTS
 
     /// <summary>
     /// Interface for jobs that iterate through the list of potentially overlapping body pairs
@@ -31,8 +30,6 @@ namespace Unity.Physics
     public interface IBodyPairsJob : IBodyPairsJobBase
     {
     }
-
-#endif
 
     /// <summary>   A modifiable body pair. </summary>
     public struct ModifiableBodyPair
@@ -70,8 +67,6 @@ namespace Unity.Physics
     /// <summary>   A body pairs job extensions. </summary>
     public static class IBodyPairsJobExtensions
     {
-#if !HAVOK_PHYSICS_EXISTS
-
         /// <summary>   Default Schedule() implementation for IBodyPairsJob. </summary>
         ///
         /// <typeparam name="T">    Generic type parameter. </typeparam>
@@ -93,36 +88,6 @@ namespace Unity.Physics
             return ScheduleUnityPhysicsBodyPairsJob(jobData, simulationSingleton.AsSimulation(), ref world, inputDeps);
         }
 
-#else
-
-        /// <summary>
-        /// In this case Schedule() implementation for IBodyPairsJob is provided by the Havok.Physics
-        /// assembly.
-        /// This is a stub to catch when that assembly is missing.
-        /// </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="jobData">              The jobData to act on. </param>
-        /// <param name="simulationSingleton">  The simulation singleton. </param>
-        /// <param name="world">                [in,out] The world. </param>
-        /// <param name="inputDeps">            The input deps. </param>
-        /// <param name="_causeCompileError">   (Optional) The cause compile error. </param>
-        ///
-        /// <returns>   A JobHandle. </returns>
-        [Obsolete("This error occurs when HAVOK_PHYSICS_EXISTS is defined but Havok.Physics is missing from your package's asmdef references. (DoNotRemove)", true)]
-        public static unsafe JobHandle Schedule<T>(this T jobData, SimulationSingleton simulationSingleton, ref PhysicsWorld world, JobHandle inputDeps,
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF _causeCompileError = HAVOK_PHYSICS_MISSING_FROM_ASMDEF.HAVOK_PHYSICS_MISSING_FROM_ASMDEF)
-            where T : struct, IBodyPairsJobBase
-        {
-            return new JobHandle();
-        }
-
-        /// <summary>   Values that represent havok physics missing from asmdefs. </summary>
-        public enum HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        {
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        }
-#endif
 
         internal static unsafe JobHandle ScheduleUnityPhysicsBodyPairsJob<T>(T jobData, Simulation simulation, ref PhysicsWorld world, JobHandle inputDeps)
             where T : struct, IBodyPairsJobBase

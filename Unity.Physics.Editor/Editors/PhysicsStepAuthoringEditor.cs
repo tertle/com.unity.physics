@@ -13,15 +13,15 @@ namespace Unity.Physics.Editor
             public static readonly GUIContent SolverStabilizationLabelUnityPhysics = EditorGUIUtility.TrTextContent("Enable Contact Solver Stabilization Heuristic",
                 "Specifies whether the contact solver stabilization heuristic should be applied. Enabling this will result in better overall stability of bodies and piles, " +
                 "but may result in behavior artifacts.");
-            public static readonly GUIContent SolverStabilizationLabelHavokPhysics = EditorGUIUtility.TrTextContent("Enable Contact Solver Stabilization Heuristic",
-                "Havok Physics already has stable contact solving algorithms due to the ability to cache states, so it doesn't need any additional solver stabilization heuristics.");
         }
 
 #pragma warning disable 649
         [AutoPopulate] SerializedProperty m_SimulationType;
         [AutoPopulate] SerializedProperty m_Gravity;
+        [AutoPopulate] SerializedProperty m_EnableGyroscopicTorque;
         [AutoPopulate] SerializedProperty m_SubstepCount;
         [AutoPopulate] SerializedProperty m_SolverIterationCount;
+        [AutoPopulate] SerializedProperty m_DirectSolverSettings;
         [AutoPopulate] SerializedProperty m_EnableSolverStabilizationHeuristic;
         [AutoPopulate] SerializedProperty m_MultiThreaded;
         [AutoPopulate] SerializedProperty m_CollisionTolerance;
@@ -43,58 +43,18 @@ namespace Unity.Physics.Editor
             using (new EditorGUI.DisabledScope(m_SimulationType.intValue == (int)SimulationType.NoPhysics))
             {
                 EditorGUILayout.PropertyField(m_Gravity);
-
-#if HAVOK_PHYSICS_EXISTS
-                bool havokPhysics = m_SimulationType.intValue == (int)SimulationType.HavokPhysics;
-                using (new EditorGUI.DisabledScope(havokPhysics))
-                {
-                    EditorGUILayout.PropertyField(m_SubstepCount);
-                }
-#else
+                EditorGUILayout.PropertyField(m_EnableGyroscopicTorque);
                 EditorGUILayout.PropertyField(m_SubstepCount);
-#endif
                 EditorGUILayout.PropertyField(m_SolverIterationCount);
+                EditorGUILayout.PropertyField(m_DirectSolverSettings);
                 EditorGUILayout.PropertyField(m_MultiThreaded);
-
-#if HAVOK_PHYSICS_EXISTS
-                using (new EditorGUI.DisabledScope(havokPhysics))
-                {
-#endif
-                    EditorGUILayout.PropertyField(m_CollisionTolerance);
-                    EditorGUILayout.PropertyField(m_MaxDynamicDepenetrationVelocity);
-                    EditorGUILayout.PropertyField(m_MaxStaticDepenetrationVelocity);
-#if HAVOK_PHYSICS_EXISTS
-                }
-#endif
+                EditorGUILayout.PropertyField(m_CollisionTolerance);
+                EditorGUILayout.PropertyField(m_MaxDynamicDepenetrationVelocity);
+                EditorGUILayout.PropertyField(m_MaxStaticDepenetrationVelocity);
                 EditorGUILayout.PropertyField(m_SynchronizeCollisionWorld);
-
                 EditorGUILayout.PropertyField(m_IncrementalDynamicBroadphase);
-
                 EditorGUILayout.PropertyField(m_IncrementalStaticBroadphase);
-
-#if HAVOK_PHYSICS_EXISTS
-                using (new EditorGUI.DisabledScope(havokPhysics))
-                {
-                    bool enableStabilization = m_EnableSolverStabilizationHeuristic.boolValue;
-
-                    // Temporarily invalidate
-                    if (havokPhysics)
-                    {
-                        m_EnableSolverStabilizationHeuristic.boolValue = false;
-                    }
-
-                    EditorGUILayout.PropertyField(m_EnableSolverStabilizationHeuristic,
-                        havokPhysics ? Content.SolverStabilizationLabelHavokPhysics : Content.SolverStabilizationLabelUnityPhysics);
-
-                    // Revert back
-                    if (havokPhysics)
-                    {
-                        m_EnableSolverStabilizationHeuristic.boolValue = enableStabilization;
-                    }
-                }
-#else
                 EditorGUILayout.PropertyField(m_EnableSolverStabilizationHeuristic, Content.SolverStabilizationLabelUnityPhysics);
-#endif
             }
 
             if (EditorGUI.EndChangeCheck())

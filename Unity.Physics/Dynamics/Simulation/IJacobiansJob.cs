@@ -33,7 +33,6 @@ namespace Unity.Physics
         void Execute(ref ModifiableJacobianHeader header, ref ModifiableTriggerJacobian jacobian);
     }
 
-#if !HAVOK_PHYSICS_EXISTS
 
     /// <summary>
     /// Interface for jobs that iterate through the list of Jacobians before they are solved.
@@ -42,7 +41,6 @@ namespace Unity.Physics
     {
     }
 
-#endif
 
     /// <summary>   A modifiable jacobian header. </summary>
     public unsafe struct ModifiableJacobianHeader
@@ -270,8 +268,6 @@ namespace Unity.Physics
     /// <summary>   The jacobians job extensions. </summary>
     public static class IJacobiansJobExtensions
     {
-#if !HAVOK_PHYSICS_EXISTS
-
         /// <summary>   Default Schedule() implementation for IJacobiansJob. </summary>
         ///
         /// <typeparam name="T">    Generic type parameter. </typeparam>
@@ -293,50 +289,18 @@ namespace Unity.Physics
             return ScheduleUnityPhysicsJacobiansJob(jobData, simulationSingleton.AsSimulation(), ref world, inputDeps);
         }
 
-#else
-
-        /// <summary>
-        /// In this case Schedule() implementation for IJacobiansJob is provided by the Havok.Physics
-        /// assembly.
-        ///  This is a stub to catch when that assembly is missing.
-        /// <todo.eoin.modifier Put in a link to documentation for this:
-        /// </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="jobData">              The jobData to act on. </param>
-        /// <param name="simulationSingleton">  The simulation singleton. </param>
-        /// <param name="world">                [in,out] The world. </param>
-        /// <param name="inputDeps">            The input deps. </param>
-        /// <param name="_causeCompileError">   (Optional) The cause compile error. </param>
-        ///
-        /// <returns>   A JobHandle. </returns>
-        [Obsolete("This error occurs when HAVOK_PHYSICS_EXISTS is defined but Havok.Physics is missing from your package's asmdef references. (DoNotRemove)", true)]
-        public static unsafe JobHandle Schedule<T>(this T jobData, SimulationSingleton simulationSingleton, ref PhysicsWorld world, JobHandle inputDeps,
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF _causeCompileError = HAVOK_PHYSICS_MISSING_FROM_ASMDEF.HAVOK_PHYSICS_MISSING_FROM_ASMDEF)
-            where T : struct, IJacobiansJobBase
-        {
-            return new JobHandle();
-        }
-
-        /// <summary>   Values that represent havok physics missing from asmdefs. </summary>
-        public enum HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        {
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        }
-#endif
 
         internal static unsafe JobHandle ScheduleUnityPhysicsJacobiansJob<T>(T jobData, Simulation simulation, ref PhysicsWorld world, JobHandle inputDeps)
             where T : struct, IJacobiansJobBase
         {
             SafetyChecks.CheckSimulationStageAndThrow(simulation.m_SimulationScheduleStage, SimulationScheduleStage.PostCreateJacobians);
 
-            if (simulation.StepContext.Jacobians.IsCreated && simulation.StepContext.SolverSchedulerInfo.NumWorkItems.IsCreated)
+            if (simulation.StepContext.Jacobians.IsCreated)
             {
                 var data = new JacobiansJobData<T>
                 {
                     UserJobData = jobData,
                     StreamReader = simulation.StepContext.Jacobians.AsReader(),
-                    NumWorkItems = simulation.StepContext.SolverSchedulerInfo.NumWorkItems,
                     Bodies = world.Bodies
                 };
 
@@ -356,12 +320,10 @@ namespace Unity.Physics
             public T UserJobData;
             public NativeStream.Reader StreamReader;
 
-            [ReadOnly] public NativeArray<int> NumWorkItems;
-
             // Disable aliasing restriction in case T has a NativeArray of PhysicsWorld.Bodies
             [ReadOnly, NativeDisableContainerSafetyRestriction] public NativeArray<RigidBody> Bodies;
 
-            int m_CurrentWorkItem;
+            int m_CurrentForEachIndex;
 
             public bool HasItemsLeft => StreamReader.RemainingItemCount > 0;
 
@@ -386,11 +348,9 @@ namespace Unity.Physics
 
             public void MoveReaderToNextForEachIndex()
             {
-                int numWorkItems = NumWorkItems[0];
-                while (StreamReader.RemainingItemCount == 0 && m_CurrentWorkItem < numWorkItems)
+                while (StreamReader.RemainingItemCount == 0 && m_CurrentForEachIndex < StreamReader.ForEachCount)
                 {
-                    StreamReader.BeginForEachIndex(m_CurrentWorkItem);
-                    m_CurrentWorkItem++;
+                    StreamReader.BeginForEachIndex(m_CurrentForEachIndex++);
                 }
             }
         }

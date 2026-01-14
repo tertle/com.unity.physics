@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -102,7 +101,7 @@ namespace Unity.Physics.Authoring
                 {
                     var entity = GetEntity(TransformUsageFlags.Dynamic);
 
-                    // // Rigid Body bakes always add the PhysicsWorldIndex component and process transform
+                    // Rigid Body baker always adds the PhysicsWorldIndex component and processes the transform
                     if (!hasBodyComponent)
                     {
                         AddSharedComponent(entity, new PhysicsWorldIndex());
@@ -201,7 +200,7 @@ namespace Unity.Physics.Authoring
                             childrenToShape.Add(transform);
                         }
 
-                        DependsOn(meshes.Last());
+                        DependsOn(meshes[^1]);
                     }
                 }
             }

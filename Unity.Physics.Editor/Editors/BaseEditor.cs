@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEditorInternal;
@@ -30,14 +29,28 @@ namespace Unity.Physics.Editor
         {
             const BindingFlags bindingFlags =
                 BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy;
-            var autoFields = GetType().GetFields(bindingFlags)
-                .Where(f => Attribute.IsDefined(f, typeof(AutoPopulateAttribute)))
-                .ToArray();
+            var allFields = GetType().GetFields(bindingFlags);
+
+            // Filter fields with AutoPopulateAttribute
+            var autoFieldsList = new List<FieldInfo>();
+            foreach (var field in allFields)
+            {
+                if (Attribute.IsDefined(field, typeof(AutoPopulateAttribute)))
+                {
+                    autoFieldsList.Add(field);
+                }
+            }
+            var autoFields = autoFieldsList.ToArray();
 
             foreach (var field in autoFields)
             {
-                var attr =
-                    field.GetCustomAttributes(typeof(AutoPopulateAttribute)).Single() as AutoPopulateAttribute;
+                // Get the single attribute
+                AutoPopulateAttribute attr = null;
+                var attrs = field.GetCustomAttributes(typeof(AutoPopulateAttribute), false);
+                if (attrs.Length > 0)
+                {
+                    attr = attrs[0] as AutoPopulateAttribute;
+                }
 
                 var sp = serializedObject.FindProperty(attr.PropertyPath ?? field.Name);
 

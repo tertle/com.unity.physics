@@ -5,7 +5,6 @@ using UnityEditor.Build.Reporting;
 using UnityEditor.Build;
 using UnityEditor.Callbacks;
 using System.IO;
-using System.Linq;
 using System;
 
 namespace Unity.DebugDisplay
@@ -13,7 +12,7 @@ namespace Unity.DebugDisplay
     class DebugDisplayProcessorBuild : IPreprocessBuildWithReport
     {
         public int callbackOrder { get { return 0; } }
-        internal static string ResourcesPath => Path.Combine(Managed.debugDirName, "Resources");
+        internal static string ResourcesPath => Path.Combine(Renderer.debugDirName, "Resources");
 
         public void OnPreprocessBuild(BuildReport report)
         {
@@ -25,10 +24,15 @@ namespace Unity.DebugDisplay
                 }
 
                 // Get all .mat and .shader files from debugDirName
-                string[] materialFiles = Directory.GetFiles(Managed.debugDirName, "*.mat", SearchOption.TopDirectoryOnly);
-                string[] shaderFiles = Directory.GetFiles(Managed.debugDirName, "*.shader", SearchOption.TopDirectoryOnly);
+                string[] materialFiles = Directory.GetFiles(Renderer.debugDirName, "*.mat", SearchOption.TopDirectoryOnly);
+                string[] shaderFiles = Directory.GetFiles(Renderer.debugDirName, "*.shader", SearchOption.TopDirectoryOnly);
 
-                foreach (string file in materialFiles.Concat(shaderFiles))
+                // Combine both arrays
+                string[] allFiles = new string[materialFiles.Length + shaderFiles.Length];
+                materialFiles.CopyTo(allFiles, 0);
+                shaderFiles.CopyTo(allFiles, materialFiles.Length);
+
+                foreach (string file in allFiles)
                 {
                     string destinationFile = Path.Combine(ResourcesPath, Path.GetFileName(file));
                     File.Copy(file, destinationFile, true);
@@ -43,7 +47,7 @@ namespace Unity.DebugDisplay
         [PostProcessBuild(1)]
         private static void OnPostprocessBuild(BuildTarget target, string pathToBuiltProject)
         {
-            var metaFile = Path.Combine(Managed.debugDirName, "Resources.meta");
+            var metaFile = Path.Combine(Renderer.debugDirName, "Resources.meta");
             if (File.Exists(metaFile))
             {
                 File.Delete(metaFile);

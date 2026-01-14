@@ -198,7 +198,7 @@ namespace Unity.Physics.Authoring
             return DebugStaticColor;
         }
 
-        public static void DrawPrimitiveSphereEdges(float radius, float3 center, RigidTransform wfc, ref ColliderGeometry sphereGeometry, float uniformScale)
+        public static void DrawPrimitiveSphereEdges(DebugDraw debugDraw, float radius, float3 center, RigidTransform wfc, ref ColliderGeometry sphereGeometry, float uniformScale)
         {
             var edgesColor = DebugDisplay.ColorIndex.Green;
             var shapeScale = new float3(radius * 2.0f); // Radius to scale : Multiple by 2
@@ -214,8 +214,7 @@ namespace Unity.Physics.Authoring
                     sphereVerticesWorld[i] = math.transform(worldTransform, sphereGeometry.VerticesArray[i]);
                 }
 
-                PhysicsDebugDisplaySystem.TriangleEdges(sphereVerticesWorld, sphereGeometry.IndicesArray,
-                    edgesColor);
+                debugDraw.TriangleEdges(sphereVerticesWorld, sphereGeometry.IndicesArray, edgesColor);
             }
             finally
             {
@@ -223,7 +222,7 @@ namespace Unity.Physics.Authoring
             }
         }
 
-        public static void DrawPrimitiveSphereFaces(float radius, float3 center, RigidTransform wfc, ref ColliderGeometry sphereGeometry, ColorIndex color, float uniformScale)
+        public static void DrawPrimitiveSphereFaces(DebugDraw debugDraw, float radius, float3 center, RigidTransform wfc, ref ColliderGeometry sphereGeometry, ColorIndex color, float uniformScale)
         {
             var shapeScale = new float3(radius * 2.0f) * uniformScale;
             var sphereTransform = float4x4.TRS(center, Quaternion.identity, shapeScale);
@@ -237,7 +236,7 @@ namespace Unity.Physics.Authoring
                     sphereVerticesWorld[i] = math.transform(worldTransform, sphereGeometry.VerticesArray[i]);
                 }
 
-                PhysicsDebugDisplaySystem.Triangles(sphereVerticesWorld, sphereGeometry.IndicesArray, color);
+                debugDraw.Triangles(sphereVerticesWorld, sphereGeometry.IndicesArray, color);
             }
             finally
             {
@@ -245,7 +244,7 @@ namespace Unity.Physics.Authoring
             }
         }
 
-        public static void DrawPrimitiveCapsuleEdges(float radius, float height, float3 center, Quaternion orientation, RigidTransform wfc, float uniformScale)
+        public static void DrawPrimitiveCapsuleEdges(DebugDraw debugDraw, float radius, float height, float3 center, Quaternion orientation, RigidTransform wfc, float uniformScale)
         {
             var edgesColor = ColorIndex.Green;
             var capsuleTransform = float4x4.TRS(center * uniformScale, orientation, uniformScale);
@@ -261,7 +260,7 @@ namespace Unity.Physics.Authoring
                     lineVertices[i + 1] = math.transform(worldTransform, capsuleEdges[i + 1]);
                 }
 
-                PhysicsDebugDisplaySystem.Lines(lineVertices, edgesColor);
+                debugDraw.Lines(lineVertices, edgesColor);
             }
             finally
             {
@@ -269,7 +268,7 @@ namespace Unity.Physics.Authoring
             }
         }
 
-        public static void DrawPrimitiveCapsuleFaces(float radius, float cylinderHeight, float3 center, Quaternion orientation, RigidTransform wfc, ref ColliderGeometry cylinderGeometry, ref ColliderGeometry hemisphereGeometry, ColorIndex color, float uniformScale)
+        public static void DrawPrimitiveCapsuleFaces(DebugDraw debugDraw, float radius, float cylinderHeight, float3 center, Quaternion orientation, RigidTransform wfc, ref ColliderGeometry cylinderGeometry, ref ColliderGeometry hemisphereGeometry, ColorIndex color, float uniformScale)
         {
             // Cylinder
             var cylinderShapeScale = new float3(2.0f * radius, cylinderHeight, 2.0f * radius);
@@ -308,9 +307,9 @@ namespace Unity.Physics.Authoring
                     bottomHemisphereVerticesWorld[i] = math.transform(bottomHemisphereWorldTransform, hemisphereGeometry.VerticesArray[i]);
                 }
 
-                PhysicsDebugDisplaySystem.Triangles(cylinderVerticesWorld, cylinderGeometry.IndicesArray, color);
-                PhysicsDebugDisplaySystem.Triangles(topHemisphereVerticesWorld, hemisphereGeometry.IndicesArray, color);
-                PhysicsDebugDisplaySystem.Triangles(bottomHemisphereVerticesWorld, hemisphereGeometry.IndicesArray, color);
+                debugDraw.Triangles(cylinderVerticesWorld, cylinderGeometry.IndicesArray, color);
+                debugDraw.Triangles(topHemisphereVerticesWorld, hemisphereGeometry.IndicesArray, color);
+                debugDraw.Triangles(bottomHemisphereVerticesWorld, hemisphereGeometry.IndicesArray, color);
             }
             finally
             {
@@ -320,7 +319,7 @@ namespace Unity.Physics.Authoring
             }
         }
 
-        public static void DrawPrimitiveBoxFaces(float3 size, float3 center, Quaternion orientation, RigidTransform wfc, ref ColliderGeometry boxGeometry, ColorIndex color, float uniformScale)
+        public static void DrawPrimitiveBoxFaces(DebugDraw debugDraw, float3 size, float3 center, Quaternion orientation, RigidTransform wfc, ref ColliderGeometry boxGeometry, ColorIndex color, float uniformScale)
         {
             var boxVerticesWorld = new NativeArray<float3>(boxGeometry.VerticesArray.Length, Allocator.Temp);
             var boxTransform = float4x4.TRS(center, orientation, uniformScale * size);
@@ -333,7 +332,7 @@ namespace Unity.Physics.Authoring
                     boxVerticesWorld[i] = math.transform(worldTransform,  boxGeometry.VerticesArray[i]);
                 }
 
-                PhysicsDebugDisplaySystem.Triangles(boxVerticesWorld, boxGeometry.IndicesArray, color);
+                debugDraw.Triangles(boxVerticesWorld, boxGeometry.IndicesArray, color);
             }
             finally
             {
@@ -341,7 +340,7 @@ namespace Unity.Physics.Authoring
             }
         }
 
-        public static void DrawPrimitiveCylinderEdges(float radius, float height, float3 center, Quaternion orientation, RigidTransform wfc, ref ColliderGeometry cylinderGeometry, float uniformScale)
+        public static void DrawPrimitiveCylinderEdges(DebugDraw debugDraw, float radius, float height, float3 center, Quaternion orientation, RigidTransform wfc, ref ColliderGeometry cylinderGeometry, float uniformScale)
         {
             var edgesColor = ColorIndex.Green;
             var shapeScale = new float3(2.0f * radius, height * 0.5f, 2.0f * radius) * uniformScale;
@@ -356,7 +355,7 @@ namespace Unity.Physics.Authoring
                     cylinderVerticesWorld[i] = math.transform(worldTransform, cylinderGeometry.VerticesArray[i]);
                 }
 
-                PhysicsDebugDisplaySystem.TriangleEdges(cylinderVerticesWorld, cylinderGeometry.IndicesArray, edgesColor);
+                debugDraw.TriangleEdges(cylinderVerticesWorld, cylinderGeometry.IndicesArray, edgesColor);
             }
             finally
             {
@@ -364,7 +363,7 @@ namespace Unity.Physics.Authoring
             }
         }
 
-        public static void DrawPrimitiveCylinderFaces(float radius, float height, float3 center, Quaternion orientation, RigidTransform wfc, ref ColliderGeometry cylinderGeometry, ColorIndex color, float uniformScale)
+        public static void DrawPrimitiveCylinderFaces(DebugDraw debugDraw, float radius, float height, float3 center, Quaternion orientation, RigidTransform wfc, ref ColliderGeometry cylinderGeometry, ColorIndex color, float uniformScale)
         {
             var shapeScale = new float3(2.0f * radius, height * 0.5f, 2.0f * radius);
             var cylinderTransform = float4x4.TRS(center, orientation, uniformScale * shapeScale);
@@ -379,7 +378,7 @@ namespace Unity.Physics.Authoring
                     cylinderVerticesWorld[i] = math.transform(worldTransform, cylinderGeometry.VerticesArray[i]);
                 }
 
-                PhysicsDebugDisplaySystem.Triangles(cylinderVerticesWorld, cylinderGeometry.IndicesArray, color);
+                debugDraw.Triangles(cylinderVerticesWorld, cylinderGeometry.IndicesArray, color);
             }
             finally
             {

@@ -34,6 +34,10 @@ namespace Unity.Physics.Editor
                 "Specifies how bouncy the object will be when colliding with other surfaces, " +
                 "as well as what value should be used when colliding with an object that has a different value."
             );
+            public static readonly GUIContent SolverTypeLabel = EditorGUIUtility.TrTextContent(
+                "Solver Type",
+                "Specifies type of solver to use for calculating contact forces during collisions with this material."
+            );
             public static readonly GUIContent CollisionResponseLabel = EditorGUIUtility.TrTextContent(
                 "Collision Response",
                 "Specifies whether the shape should collide normally, raise trigger events when intersecting other shapes, " +
@@ -42,11 +46,11 @@ namespace Unity.Physics.Editor
             );
 
             public static readonly GUIContent DetailedStaticMeshCollisionLabel = EditorGUIUtility.TrTextContent(
-               "Detailed Static Mesh Collision",
-               "When enabled, this option processes contact detection for dynamic objects colliding with static colliders " +
-               "across both the current and next frame. This helps predict and refine collision accuracy, reducing the " +
-               "likelihood of ghost collisions. Disable this if detailed precision is not required, as it may impact performance."
-           );
+                "Detailed Static Mesh Collision",
+                "When enabled, this option processes contact detection for dynamic objects colliding with static colliders " +
+                "across both the current and next frame. This helps predict and refine collision accuracy, reducing the " +
+                "likelihood of ghost collisions. Disable this if detailed precision is not required, as it may impact performance."
+            );
         }
 
         const string k_CollisionFilterGroupKey = "m_BelongsToCategories";
@@ -101,13 +105,13 @@ namespace Unity.Physics.Editor
             if (property.FindPropertyRelative("m_SupportsTemplate").boolValue)
                 height += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
 
-            // m_Friction, m_Restitution
+            // m_Friction, m_Restitution, m_SolverType
             FindToggleAndValueProperties(property, templateValueProperty, "m_CollisionResponse", out _, out var collisionResponse);
             // Check if regular collider
             CollisionResponsePolicy collisionResponseEnum = (CollisionResponsePolicy)collisionResponse.intValue;
             if (collisionResponseEnum == CollisionResponsePolicy.Collide ||
                 collisionResponseEnum == CollisionResponsePolicy.CollideRaiseCollisionEvents)
-                height += 2f * (EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing);
+                height += 3f * (EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing);
 
             return height;
         }
@@ -174,7 +178,7 @@ namespace Unity.Physics.Editor
                 position.y = position.yMax + EditorGUIUtility.standardVerticalSpacing;
                 position.height = EditorGUIUtility.singleLineHeight;
                 DisplayOverridableProperty(position, Content.RestitutionLabel, toggle, restitution, templateAssigned);
-            }
+           }
 
             // collision filter group
             var collisionFilterGroup = property.FindPropertyRelative(k_CollisionFilterGroupKey);

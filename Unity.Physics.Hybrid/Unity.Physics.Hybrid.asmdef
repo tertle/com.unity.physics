@@ -1,5 +1,6 @@
 {
     "name": "Unity.Physics.Hybrid",
+    "rootNamespace": "",
     "references": [
         "Unity.Burst",
         "Unity.Collections",
@@ -16,12 +17,6 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [
-        {
-            "name": "com.havok.physics",
-            "expression": "0.0.0",
-            "define": "HAVOK_PHYSICS_EXISTS"
-        }
-    ],
+    "versionDefines": [],
     "noEngineReferences": false
 }

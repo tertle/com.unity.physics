@@ -12,8 +12,6 @@ namespace Unity.Physics.Tests.Dynamics.Motors
     public class MotorTestUtility
     {
         internal const float TestFrequency = 60.0f;
-        internal const float TestTimestep = 1.0f / TestFrequency;
-        internal const int numTestIterations = 4;
 
         internal static void ApplyGravity(ref MotionVelocity velocity, float3 gravity, float timestep)
         {
@@ -198,8 +196,8 @@ namespace Unity.Physics.Tests.Dynamics.Motors
             {
                 NativeStream.Writer jacobianWriter = jacobiansOut.AsWriter();
                 jacobianWriter.BeginForEachIndex(0);
-                Solver.BuildJointJacobian(jointData, velocityA, velocityB, motionA, motionB, stepInput.Timestep,
-                    stepInput.NumSolverIterations, ref jacobianWriter);
+                Solver.BuildJointJacobian(ref jointData, jointData.SolverType, velocityA, velocityB, motionA, motionB, stepInput.Timestep,
+                    stepInput.NumSolverIterations, stepInput.DirectSolverSettings, ref jacobianWriter);
                 jacobianWriter.EndForEachIndex();
             }
 
@@ -288,8 +286,6 @@ namespace Unity.Physics.Tests.Dynamics.Motors
             {
                 Gravity = gravity,
                 Timestep = timeStep,
-                InvTimestep = Solver.CalculateInvTimeStep(timeStep),
-                InvNumSolverIterations = 1.0f / numSolverIterations,
                 NumSubsteps = numSubsteps,
                 NumSolverIterations = numSolverIterations,
                 CurrentSubstep = 0,
@@ -409,8 +405,6 @@ namespace Unity.Physics.Tests.Dynamics.Motors
                     {
                         Gravity = gravity,
                         Timestep = timeStep,
-                        InvTimestep = Solver.CalculateInvTimeStep(timeStep),
-                        InvNumSolverIterations = 1.0f / numSolverIterations,
                         NumSubsteps = numSubsteps,
                         NumSolverIterations = numSolverIterations,
                         CurrentSubstep = 0,

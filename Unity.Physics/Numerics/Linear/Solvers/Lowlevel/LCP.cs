@@ -1,4 +1,5 @@
-using System.Threading;
+//#define LCP_DEBUG_LOG
+
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
@@ -320,7 +321,6 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                             {
                                 for (int i = 0; i < numFreeIndices; ++i)
                                 {
-                                    var index = F[i];
                                     if (z_F[i] < -eps && indexSetArray[F[i]] != LCPIndexFlag.ForcedFree)
                                     {
                                         // remove from free set and put in tight set
@@ -385,7 +385,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
         [GenerateTestsForBurstCompatibility]
         public static bool SolveMLCP(in Matrix M, in Vector q, in Vector l, in Vector u,
             ref NativeArray<MLCPIndexFlag> indexSetArray,
-            [WriteOnly] ref Vector w, [WriteOnly] ref Vector z, in float eps = 1e-4f, in uint maxNumIterations = 100,
+            [WriteOnly] ref Vector w, [WriteOnly] ref Vector z, bool useCholeskyFactorization = false, float eps = 1e-4f, uint maxNumIterations = 100,
             in uint maxNumBlockIterWithoutInfeasibilityReduction = 3)
         {
             if (M.NumCols != M.NumRows)
@@ -444,7 +444,8 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                 var L = new NativeArray<int>(dim, Allocator.Temp);
                 var U = new NativeArray<int>(dim, Allocator.Temp);
                 var F = new NativeArray<int>(dim, Allocator.Temp);
-                var pivots = new NativeArray<int>(dim, Allocator.Temp);
+                var pivots = useCholeskyFactorization ? default
+                    : new NativeArray<int>(dim, Allocator.Temp);
                 Vector z_F = new Vector();
                 Vector l_L = new Vector();
                 Vector u_U = new Vector();
@@ -526,8 +527,17 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                         // Solve the linear system M_FF * z_F = -b for z_F with -b = -M_FL * l_L - M_FU * u_U - q_F,
                         // under the assumption that the current lower tight, upper tight and free index sets (U, T and F) are accurate.
 
-                        // Compute LU factorization of M_FF with M_FF = LU.
-                        LU.Factor(M_FF, ref pivots, out var singularRow);
+                        // Compute factorization of M_FF with M_FF = LU (or LL^t).
+                        int singularRow;
+                        if (useCholeskyFactorization)
+                        {
+                            Cholesky.Factor(M_FF, out singularRow);
+                        }
+                        else
+                        {
+                            LU.Factor(M_FF, ref pivots, out singularRow);
+                        }
+
                         if (singularRow != -1)
                         {
                             UnityEngine.Debug.LogError(
@@ -577,15 +587,18 @@ namespace Unity.Numerics.Linear.Dense.Primitives
 
                         // Note: we need to use the pivot array from the factorization above to permute the input rhs
                         // vector in order to solve the correct system.
-                        var pivot = false;
-                        for (int i = 0; i < numFreeIndices; ++i)
+                        if (!useCholeskyFactorization)
                         {
-                            pivot |= pivots[i] != i;
-                        }
+                            var pivot = false;
+                            for (int i = 0; i < numFreeIndices; ++i)
+                            {
+                                pivot |= pivots[i] != i;
+                            }
 
-                        if (pivot)
-                        {
-                            B.InterchangeRows(pivots, 0, numFreeIndices - 1);
+                            if (pivot)
+                            {
+                                B.InterchangeRows(pivots, 0, numFreeIndices - 1);
+                            }
                         }
 
                         // Solve L * y = -b for y
@@ -994,10 +1007,10 @@ namespace Unity.Numerics.Linear.Dense.Primitives
         [GenerateTestsForBurstCompatibility]
         public static float SolveCoupledMLCP(in Matrix M, in Vector q, ref Vector l, ref Vector u,
             ref NativeArray<MLCPIndexFlag> indexSetArray, ref NativeList<CouplingData> couplingDataArray,
-            [WriteOnly] ref Vector w, [WriteOnly] ref Vector z, in float eps = 1e-4f,
-            in uint maxNumIterations = 100,
-            in uint maxNumBlockIterWithoutInfeasibilityReduction = 3,
-            in uint maxCouplingIterations = 10, in uint minNumCouplingIterations = 2, in uint minNumRefinementIterations = 10)
+            [WriteOnly] ref Vector w, [WriteOnly] ref Vector z, bool useCholeskyFactorization = false, float eps = 1e-4f,
+            uint maxNumIterations = 60,
+            uint maxNumBlockIterWithoutInfeasibilityReduction = 3,
+            uint maxCouplingIterations = 10, uint minNumCouplingIterations = 2, uint minNumRefinementIterations = 10)
         {
             if (M.NumCols != M.NumRows)
             {
@@ -1061,7 +1074,9 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                 var L = new NativeArray<int>(dim, Allocator.Temp);
                 var U = new NativeArray<int>(dim, Allocator.Temp);
                 var F = new NativeArray<int>(dim, Allocator.Temp);
-                var pivots = new NativeArray<int>(dim, Allocator.Temp);
+                var pivots = useCholeskyFactorization ? default
+                    : new NativeArray<int>(dim, Allocator.Temp);
+
                 Vector z_F = new Vector();
                 Vector l_L = new Vector();
                 Vector u_U = new Vector();
@@ -1143,8 +1158,17 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                         // Solve the linear system M_FF * z_F = -b for z_F with -b = -M_FL * l_L - M_FU * u_U - q_F,
                         // under the assumption that the current lower tight, upper tight and free index sets (U, T and F) are accurate.
 
-                        // Compute LU factorization of M_FF with M_FF = LU.
-                        LU.Factor(M_FF, ref pivots, out var singularRow);
+                        // Compute factorization of M_FF with M_FF = LU (or LL^t).
+                        int singularRow;
+                        if (useCholeskyFactorization)
+                        {
+                            Cholesky.Factor(M_FF, out singularRow);
+                        }
+                        else
+                        {
+                            LU.Factor(M_FF, ref pivots, out singularRow);
+                        }
+
                         if (singularRow != -1)
                         {
                             UnityEngine.Debug.LogError(
@@ -1184,38 +1208,59 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                             M_FU.Dispose();
                         }
 
-                        // @todo: add a linear system solver to Numerics which uses LU factorization, for use here and in Solver.cs
+                        // @todo: add a linear system solver to Numerics which uses LU or Cholesky factorization, for use here and in Solver.cs
 
                         ////
-                        // 2.b With M_FF = LU, solve linear system LU * z_F = -b via forward and backward substitution as follows:
+                        // 2.b With M_FF = LU (or LL^t), solve linear system LU * z_F = -b via forward and backward substitution as follows:
                         //      1. Define y := U * z_F
                         //      2. Solve L * y = -b for y
                         //      3. Then, solve U * z_F = y for z_F
 
-                        // Note: we need to use the pivot array from the factorization above to permute the input rhs
-                        // vector in order to solve the correct system.
-                        var pivot = false;
-                        for (int i = 0; i < numFreeIndices; ++i)
+                        if (!useCholeskyFactorization)
                         {
-                            pivot |= pivots[i] != i;
+                            // Note: we need to use the pivot array from the LU factorization above to permute the input rhs
+                            // vector in order to solve the correct system.
+                            var pivot = false;
+                            for (int i = 0; i < numFreeIndices; ++i)
+                            {
+                                pivot |= pivots[i] != i;
+                            }
+
+                            if (pivot)
+                            {
+                                B.InterchangeRows(pivots, 0, numFreeIndices - 1);
+                            }
                         }
 
-                        if (pivot)
+                        if (useCholeskyFactorization)
                         {
-                            B.InterchangeRows(pivots, 0, numFreeIndices - 1);
+                            // Solve L * y = -b for y
+                            // Note: At this point we have B.Col[0] = b, so we need alpha set to -1 below to set the right hand side
+                            // in the linear system solve correctly to -b.
+
+                            B.SolveGeneralizedTriangular(Side.Left, TriangularType.Lower, Op.None, DiagonalType.Explicit,
+                                alpha: -1, M_FF);
+                            // Note: at this point, B contains y
+
+                            // Solve L^t * z_F = y for z_F
+                            B.SolveGeneralizedTriangular(Side.Left, TriangularType.Lower, Op.Transpose, DiagonalType.Explicit,
+                                alpha: 1, M_FF);
+                        }
+                        else
+                        {
+                            // Solve L * y = -b for y
+                            // Note: At this point we have B.Col[0] = b, so we need alpha set to -1 below to set the right hand side
+                            // in the linear system solve correctly to -b.
+
+                            B.SolveGeneralizedTriangular(Side.Left, TriangularType.Lower, Op.None, DiagonalType.Unit,
+                                alpha: -1, M_FF);
+                            // Note: at this point, B contains y
+
+                            // Solve U * z_F = y for z_F
+                            B.SolveGeneralizedTriangular(Side.Left, TriangularType.Upper, Op.None, DiagonalType.Explicit,
+                                alpha: 1, M_FF);
                         }
 
-                        // Solve L * y = -b for y
-                        // Note: At this point we have B.Col[0] = b, so we need alpha set to -1 below to set the right hand side
-                        // in the linear system solve correctly to -b.
-                        var alpha = -1.0f;
-                        B.SolveGeneralizedTriangular(Side.Left, TriangularType.Lower, Op.None, DiagonalType.Unit,
-                            alpha, M_FF);
-                        // Note: at this point, B contains y
-
-                        // Solve U * z_F = y for z_F
-                        B.SolveGeneralizedTriangular(Side.Left, TriangularType.Upper, Op.None, DiagonalType.Explicit,
-                            1.0f, M_FF);
                         // quickly extract result from matrix B where B.Cols[0] = z_F (data is shared through use of Subvector function)
                         z_F = B.Cols[0].Subvector(0);
                         M_FF.Dispose();
@@ -1389,7 +1434,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                     // check if number of infeasibilities has reduced
                     int numInf = freeToTight + lowerTightToFree + upperTightToFree;
                     if (numInf == 0 &&  // no more infeasibilities
-                        couplingIter + 1 > minNumCouplingIterations) // sufficient number of coupling iterations
+                        (couplingDataArray.IsEmpty || couplingIter + 1 > minNumCouplingIterations)) // either no need for coupling, or we spent sufficient number of coupling iterations
                     {
                         // No more infeasibilities. We found a solution.
 
@@ -1654,8 +1699,29 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                 z_best.CopyTo(z);
                 w_best.CopyTo(w);
 
+                // In this case, cap the z values to the lower and upper bounds, to make sure that despite this being a suboptimal solution,
+                // it at least does not violate the bounds.
+                // Ex: a contact was expected to be colliding (solved as free variable), but ended up being separating, thus yielding a sticking contact.
+                // Clamping the force to the bounds would mean that it would not stick since its force would be set to zero.
+
+                for (int i = 0; i < z_best.Dimension; ++i)
+                {
+                    if (z_best[i] > u[i])
+                    {
+                        z_best[i] = u[i];
+                    }
+                    else if (z_best[i] < l[i])
+                    {
+                        z_best[i] = l[i];
+                    }
+                }
+
                 UnityEngine.Debug.LogWarning("Maximum number of iterations exceeded. Returning best result.");
             }
+
+#if LCP_DEBUG_LOG
+            UnityEngine.Debug.LogWarning($"Number of iterations: {iter}");
+#endif
 
             return minError;
         }

@@ -11,11 +11,7 @@ namespace Unity.Physics
         /// <summary>   A dummy implementation which does nothing. </summary>
         NoPhysics,
         /// <summary>   Default C# implementation. </summary>
-        UnityPhysics,
-#if HAVOK_PHYSICS_EXISTS
-        /// <summary>   Havok implementation (using C++ plugin) </summary>
-        HavokPhysics
-#endif
+        UnityPhysics
     }
 
     internal enum SimulationScheduleStage
@@ -37,11 +33,16 @@ namespace Unity.Physics
         public float TimeStep;
         /// <summary>   Gravity in the physics world, a vector in m/s^2. </summary>
         public float3 Gravity;
+        /// <summary>   Enables gyroscopic torque, which will be added to dynamic bodies in every simulation step. </summary>
+        public bool EnableGyroscopicTorque;
         /// <summary>   Number of substep iterations to perform while solving constraints. No substepping will occur when set to 1. </summary>
         public int NumSubsteps { get => m_NumSubsteps; set => m_NumSubsteps = value <= 0 ? 1 : value; }
 
         /// <summary>   Number of Gauss-Seidel iterations to perform while solving constraints. </summary>
         public int NumSolverIterations;
+
+        /// <summary>   Settings for the direct solver. </summary>
+        public Solver.DirectSolverSettings DirectSolverSettings;
 
         /// <summary>   Maximum relative velocity that can be produced when separating intersecting dynamic rigid bodies. </summary>
         public float MaxDynamicDepenetrationVelocity;

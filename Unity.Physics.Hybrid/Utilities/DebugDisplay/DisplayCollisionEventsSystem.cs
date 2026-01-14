@@ -1,11 +1,9 @@
-#if !HAVOK_PHYSICS_EXISTS
-
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
-using Unity.Jobs;
-using Unity.Physics.Systems;
+using Unity.Physics;
+using Unity.Physics.Authoring;
 
 namespace Unity.Physics.Authoring
 {
@@ -13,13 +11,15 @@ namespace Unity.Physics.Authoring
 
     // A system which draws any collision events produced by the physics step system
     [RequireMatchingQueriesForUpdate]
-    [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
+    [UpdateInGroup(typeof(PhysicsDebugDisplayGroup))]
     [BurstCompile]
-    internal partial struct DisplayCollisionEventsSystem : ISystem
+    partial struct DisplayCollisionEventsSystem : ISystem
     {
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<PhysicsDebugDisplayData>();
+            state.RequireForUpdate<PhysicsWorldSingleton>();
+            state.RequireForUpdate<SimulationSingleton>();
         }
 
         [BurstCompile]
@@ -28,19 +28,24 @@ namespace Unity.Physics.Authoring
             if (!SystemAPI.TryGetSingleton(out PhysicsDebugDisplayData debugDisplay) || debugDisplay.DrawCollisionEvents == 0)
                 return;
 
+            if (!SystemAPI.TryGetSingleton(out DebugDraw draw))
+                return;
+
             state.Dependency = new DisplayCollisionEventsJob
             {
+                Draw = draw,
                 World = SystemAPI.GetSingleton<PhysicsWorldSingleton>().PhysicsWorld
             }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
         }
 
         // Job which iterates over collision events and writes display info to a PhysicsDebugDisplaySystem.
         [BurstCompile]
-        private struct DisplayCollisionEventsJob : ICollisionEventsJob
+        struct DisplayCollisionEventsJob : ICollisionEventsJob
         {
+            [ReadOnly][NativeDisableUnsafePtrRestriction] public DebugDraw Draw;
             [ReadOnly] public PhysicsWorld World;
 
-            public unsafe void Execute(CollisionEvent collisionEvent)
+            public void Execute(CollisionEvent collisionEvent)
             {
                 CollisionEvent.Details details = collisionEvent.CalculateDetails(ref World);
 
@@ -63,12 +68,10 @@ namespace Unity.Physics.Authoring
                 }
 
                 var averageContactPosition = details.AverageContactPointPosition;
-                PhysicsDebugDisplaySystem.Point(averageContactPosition, 0.01f, color);
-                PhysicsDebugDisplaySystem.Arrow(averageContactPosition, collisionEvent.Normal * details.EstimatedImpulse, color);
+                Draw.Point(averageContactPosition, 0.01f, color);
+                Draw.Arrow(averageContactPosition, collisionEvent.Normal * details.EstimatedImpulse, color);
             }
         }
     }
 #endif
 }
-
-#endif

@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Text;
 using NUnit.Framework.Constraints;
 using Unity.Burst;
@@ -36,22 +35,36 @@ namespace Unity.Physics.Tests
         {
             var sb = new StringBuilder();
 
-            if (query.All.Any())
+            if (query.All != null && query.All.Length > 0)
                 sb.Append($"with [{string.Join(", ", query.All)}]");
 
-            if (query.Any.Any())
+            if (query.Any != null && query.Any.Length > 0)
             {
                 if (sb.Length > 0) sb.Append(", ");
                 sb.Append($"with any of [{string.Join(", ", query.Any)}]");
             }
-            if (query.None.Any())
+            if (query.None != null && query.None.Length > 0)
             {
                 if (sb.Length > 0) sb.Append(", ");
                 sb.Append($"without [{string.Join(", ", query.None)}]");
             }
 
             if (query.Options != EntityQueryOptions.Default)
-                sb.Append($" ({string.Join(", ", Enum.GetValues(typeof(EntityQueryOptions)).Cast<EntityQueryOptions>().Where(v => (query.Options & v) == v))})");
+            {
+                var optionsBuilder = new StringBuilder();
+                var allOptions = (EntityQueryOptions[]) Enum.GetValues(typeof(EntityQueryOptions));
+                bool first = true;
+                foreach (var option in allOptions)
+                {
+                    if ((query.Options & option) == option)
+                    {
+                        if (!first) optionsBuilder.Append(", ");
+                        optionsBuilder.Append(option);
+                        first = false;
+                    }
+                }
+                sb.Append($" ({optionsBuilder})");
+            }
 
             return sb.ToString();
         }
@@ -1246,6 +1259,22 @@ namespace Unity.Physics.Tests.Utils
                 }
             }
             return GenerateRandomCompound(ref rnd, scale); // 2.5% compound
+        }
+
+        public static BlobAssetReference<Collider> GenerateRandomCollider(ref Random rnd, ColliderType colliderType)
+        {
+            var scale = 1f;
+            switch (colliderType)
+            {
+                case ColliderType.Mesh:
+                    return GenerateRandomMesh(ref rnd, scale);
+                case ColliderType.Terrain:
+                    return GenerateRandomTerrain(ref rnd, scale);
+                case ColliderType.Compound:
+                    return GenerateRandomCompound(ref rnd, scale);
+                default:
+                    return GenerateRandomConvex(ref rnd, scale);
+            }
         }
 
         public static unsafe PhysicsWorld GenerateRandomWorld(ref Random rnd, int numBodies, float size, int numThreadsHint)

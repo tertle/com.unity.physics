@@ -7,9 +7,9 @@ using System;
 using NUnit.Framework;
 using Unity.Numerics.Memory;
 
-namespace Unity.Numerics.Tests
+namespace Unity.Numerics.Memory.Tests
 {
-    public unsafe partial class TestMemory
+    public unsafe partial class TestMemoryManager
     {
         [BurstCompile(CompileSynchronously = true)]
         [GenerateTestsForBurstCompatibility]

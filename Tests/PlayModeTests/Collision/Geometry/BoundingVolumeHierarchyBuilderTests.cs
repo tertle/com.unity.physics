@@ -73,7 +73,7 @@ namespace Unity.Physics.Tests.Collision.Geometry
         // these NativeArray are twice the number of elements. Note that for the filters NativeArray, that Random is
         // called separately for each index.
         void InitInputWithCopyArrays(NativeArray<PointAndIndex> points, NativeArray<Aabb> aabbs,
-            NativeArray<CollisionFilter> filters, NativeArray<bool> respondsToCollision)
+            NativeArray<CollisionFilter> filters, NativeArray<bool> respondsToCollision, NativeArray<SolverType> bodySolverTypes)
         {
             var random = new Mathematics.Random(1234);
 
@@ -112,6 +112,8 @@ namespace Unity.Physics.Tests.Collision.Geometry
 
                 respondsToCollision[i] = true;
                 respondsToCollision[i + 1] = true;
+                bodySolverTypes[i] = Solver.kDefaultSolverType;
+                bodySolverTypes[i + 1] = Solver.kDefaultSolverType;
 
                 i++;
             }
@@ -373,7 +375,7 @@ namespace Unity.Physics.Tests.Collision.Geometry
 
             // Fill aabbs and points array with random pairs of identical elements.
             // With this data set, we expect to get elementCount / 2 overlaps in a broad phase tree overlap.
-            InitInputWithCopyArrays(points, aabbs, tree.BodyFilters.AsArray(), tree.RespondsToCollision.AsArray());
+            InitInputWithCopyArrays(points, aabbs, tree.BodyFilters.AsArray(), tree.RespondsToCollision.AsArray(), tree.BodySolverTypes.AsArray());
 
             // Override filter data with default filters.
             for (int i = 0; i < tree.BodyFilters.Length; i++)
@@ -479,7 +481,7 @@ namespace Unity.Physics.Tests.Collision.Geometry
 
             // Fill aabbs and points array with random pairs of identical elements.
             // With this data set, we expect to get elementCount / 2 overlaps in a broad phase tree overlap.
-            InitInputWithCopyArrays(points, aabbs, tree.BodyFilters.AsArray(), tree.RespondsToCollision.AsArray());
+            InitInputWithCopyArrays(points, aabbs, tree.BodyFilters.AsArray(), tree.RespondsToCollision.AsArray(), tree.BodySolverTypes.AsArray());
 
             // Override filter data with default filters to enable all collisions.
             for (int i = 0; i < tree.BodyFilters.Length; i++)
@@ -573,7 +575,8 @@ namespace Unity.Physics.Tests.Collision.Geometry
             var aabbs = new NativeArray<Aabb>(elementCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             var bodyFilters = new NativeArray<CollisionFilter>(elementCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             var bodyRespondsToCollision = new NativeArray<bool>(elementCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-            InitInputWithCopyArrays(points, aabbs, bodyFilters, bodyRespondsToCollision);
+            var bodySolverTypes = new NativeArray<SolverType>(elementCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            InitInputWithCopyArrays(points, aabbs, bodyFilters, bodyRespondsToCollision, bodySolverTypes);
 
             var nodes = new NativeList<Node>(numNodes, Allocator.Temp);
             var nodeFilters = new NativeList<CollisionFilter>(numNodes, Allocator.Temp);
@@ -610,9 +613,12 @@ namespace Unity.Physics.Tests.Collision.Geometry
             var filteredCollisionPairs = new NativeStream(1, Allocator.TempJob);
             NativeStream.Writer filteredPairWriter = filteredCollisionPairs.AsWriter();
             filteredPairWriter.BeginForEachIndex(0);
-            CollisionFilter* bodyFiltersPtr = (CollisionFilter*)bodyFilters.GetUnsafePtr();
-            bool* bodyRespondsToCollisionPtr = (bool*)bodyRespondsToCollision.GetUnsafePtr();
-            var bufferedPairs = new Broadphase.BodyPairWriter(&filteredPairWriter, bodyFiltersPtr, bodyFiltersPtr, bodyRespondsToCollisionPtr, bodyRespondsToCollisionPtr, 0, 0);
+            var bodyFiltersPtr = (CollisionFilter*)bodyFilters.GetUnsafePtr();
+            var bodyRespondsToCollisionPtr = (bool*)bodyRespondsToCollision.GetUnsafePtr();
+            var bodySolverTypesPtr = (SolverType*)bodySolverTypes.GetUnsafePtr();
+            var bufferedPairs = new Broadphase.BodyPairWriter(&filteredPairWriter,
+                bodyFiltersPtr, bodyFiltersPtr, bodyRespondsToCollisionPtr, bodyRespondsToCollisionPtr,
+                bodySolverTypesPtr, bodySolverTypesPtr, 0, 0);
 
             CollisionFilter* nodeFiltersPtr = nodeFilters.GetUnsafePtr();
             BoundingVolumeHierarchy.TreeOverlap(ref bufferedPairs, nodes.GetUnsafePtr(), nodes.GetUnsafePtr(), nodeFiltersPtr, nodeFiltersPtr);
@@ -625,18 +631,18 @@ namespace Unity.Physics.Tests.Collision.Geometry
             // Check that every pair in our filtered set also appears in the unfiltered set
             while (filteredPairReader.RemainingItemCount > 0)
             {
-                var pair = filteredPairReader.Read<BodyIndexPair>();
+                var overlapResult = filteredPairReader.Read<Broadphase.OverlapResult>();
 
                 bool found = false;
-                if (seenUnfiltered.Contains(pair))
+                if (seenUnfiltered.Contains(overlapResult.BodyPair))
                 {
                     found = true;
-                    seenUnfiltered.Remove(pair); // Remove the pair
+                    seenUnfiltered.Remove(overlapResult.BodyPair); // Remove the pair
                 }
                 else
                 {
                     // Try the reverse
-                    var reversePair = new BodyIndexPair { BodyIndexA = pair.BodyIndexB, BodyIndexB = pair.BodyIndexA };
+                    var reversePair = new BodyIndexPair { BodyIndexA = overlapResult.BodyPair.BodyIndexB, BodyIndexB = overlapResult.BodyPair.BodyIndexA };
                     if (seenUnfiltered.Contains(reversePair))
                     {
                         found = true;
@@ -657,6 +663,7 @@ namespace Unity.Physics.Tests.Collision.Geometry
             nodes.Dispose();
             bodyFilters.Dispose();
             bodyRespondsToCollision.Dispose();
+            bodySolverTypes.Dispose();
             aabbs.Dispose();
             points.Dispose();
             filteredCollisionPairs.Dispose();
@@ -695,11 +702,12 @@ namespace Unity.Physics.Tests.Collision.Geometry
             var points = new NativeArray<PointAndIndex>(elementCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             var aabbs = new NativeArray<Aabb>(elementCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             using var respondsToCollision = new NativeArray<bool>(elementCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            using var bodySolverTypes = new NativeArray<SolverType>(elementCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             using var nodes = new NativeList<Node>(numNodes, Allocator.Temp);
             using var nodesFilters = new NativeList<CollisionFilter>(numNodes, Allocator.Temp);
             var filters = new NativeArray<CollisionFilter>(elementCount, Allocator.Temp);
 
-            InitInputWithCopyArrays(points, aabbs, filters, respondsToCollision);
+            InitInputWithCopyArrays(points, aabbs, filters, respondsToCollision, bodySolverTypes);
 
             if (incremental)
             {
@@ -737,6 +745,7 @@ namespace Unity.Physics.Tests.Collision.Geometry
             public NativeArray<Node> Nodes;
             public NativeArray<CollisionFilter> Filter;
             public NativeArray<bool> RespondsToCollision;
+            public NativeArray<SolverType> BodySolverTypes;
             // If true, do no work in Execute() - allows us to get timings for a BurstCompiled
             // run without profiling the overhead of the compiler
             public bool DummyRun;
@@ -752,8 +761,10 @@ namespace Unity.Physics.Tests.Collision.Geometry
 
                 CollisionFilter* bodyFilters = (CollisionFilter*)Filter.GetUnsafePtr();
                 bool* bodyRespondsToCollision = (bool*)RespondsToCollision.GetUnsafePtr();
+                SolverType* bodySolverTypesPtr = (SolverType*)BodySolverTypes.GetUnsafePtr();
                 var pairBuffer = new Broadphase.BodyPairWriter((NativeStream.Writer*)UnsafeUtility.AddressOf(ref CollisionPairWriter),
-                    bodyFilters, bodyFilters, bodyRespondsToCollision, bodyRespondsToCollision, 0, 0);
+                    bodyFilters, bodyFilters, bodyRespondsToCollision, bodyRespondsToCollision,
+                    bodySolverTypesPtr, bodySolverTypesPtr, 0, 0);
 
                 Node* nodesPtr = (Node*)Nodes.GetUnsafePtr();
                 BoundingVolumeHierarchy.TreeOverlap(ref pairBuffer, nodesPtr, nodesPtr);
@@ -838,12 +849,14 @@ namespace Unity.Physics.Tests.Collision.Geometry
                 var dummyNodes = new NativeArray<Node>(0, Allocator.TempJob);
                 var dummyFilters = new NativeArray<CollisionFilter>(0, Allocator.TempJob);
                 var dummyRespondsToCollision = new NativeArray<bool>(0, Allocator.TempJob);
+                var dummySolverTypes = new NativeArray<SolverType>(0, Allocator.TempJob);
                 new TestTreeOverlapJob
                 {
                     CollisionPairWriter = dummyStream.AsWriter(),
                     Nodes = dummyNodes,
                     Filter = dummyFilters,
                     RespondsToCollision = dummyRespondsToCollision,
+                    BodySolverTypes = dummySolverTypes,
                     DummyRun = true
                 }.Run();
                 dummyStream.Dispose();
@@ -858,8 +871,9 @@ namespace Unity.Physics.Tests.Collision.Geometry
             var aabbs = new NativeArray<Aabb>(elementCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             var filters = new NativeArray<CollisionFilter>(elementCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             var respondsToCollision = new NativeArray<bool>(elementCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            var bodySolverTypes = new NativeArray<SolverType>(elementCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
-            InitInputWithCopyArrays(points, aabbs, filters, respondsToCollision);
+            InitInputWithCopyArrays(points, aabbs, filters, respondsToCollision, bodySolverTypes);
 
             // Override filter data with default filters.
             for (int i = 0; i < filters.Length; i++)
@@ -891,6 +905,7 @@ namespace Unity.Physics.Tests.Collision.Geometry
                 Nodes = nodes.AsArray(),
                 Filter = filters,
                 RespondsToCollision = respondsToCollision,
+                BodySolverTypes = bodySolverTypes,
                 CollisionPairWriter = collisionPairs.AsWriter(),
                 DummyRun = false
             };
@@ -908,6 +923,7 @@ namespace Unity.Physics.Tests.Collision.Geometry
             collisionPairs.Dispose();
             filters.Dispose();
             respondsToCollision.Dispose();
+            bodySolverTypes.Dispose();
         }
 
 #endif

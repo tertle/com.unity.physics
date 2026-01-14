@@ -1,5 +1,6 @@
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -12,15 +13,16 @@ namespace Unity.Physics.Authoring
 
     /// Job which draws every joint
     [BurstCompile]
-    internal struct DisplayJointsJob : IJobParallelFor
+    struct DisplayJointsJob : IJobParallelFor
     {
         const float k_Scale = 0.5f;
 
-        [ReadOnly] private NativeArray<PhysicsJoint> Joints;
-        [ReadOnly] private NativeArray<float4x4> WorldFromJointsA;
-        [ReadOnly] private NativeArray<float4x4> WorldFromJointsB;
+        DebugDraw DebugDraw;
+        [ReadOnly] NativeArray<PhysicsJoint> Joints;
+        [ReadOnly] NativeArray<float4x4> WorldFromJointsA;
+        [ReadOnly] NativeArray<float4x4> WorldFromJointsB;
 
-        public static void ScheduleJob(in EntityQuery jointsQuery, in EntityQuery bodyPairQuery, ref SystemState state)
+        public static void ScheduleJob(in DebugDraw debugDraw, in EntityQuery jointsQuery, in EntityQuery bodyPairQuery, ref SystemState state)
         {
             var joints = jointsQuery.ToComponentDataArray<PhysicsJoint>(Allocator.TempJob);
             var bodyPairs = bodyPairQuery.ToComponentDataArray<PhysicsConstrainedBodyPair>(Allocator.TempJob);
@@ -56,6 +58,7 @@ namespace Unity.Physics.Authoring
 
             state.Dependency = new DisplayJointsJob
             {
+                DebugDraw = debugDraw,
                 Joints = joints,
                 WorldFromJointsA = worldFromJointA.AsArray(),
                 WorldFromJointsB = worldFromJointB.AsArray()
@@ -107,15 +110,14 @@ namespace Unity.Physics.Authoring
                                     continue;
                                 case 1:
                                     float3 normal = rotationB[constraint.ConstrainedAxis1D];
-                                    PhysicsDebugDisplaySystem.Plane(pivotB, normal * k_Scale, colorB);
+                                    DebugDraw.Plane(pivotB, normal * k_Scale, colorB);
                                     rangeDistance = math.dot(normal, diff);
                                     rangeOrigin = pivotA - normal * rangeDistance;
                                     rangeDirection = normal;
                                     break;
                                 case 2:
                                     float3 direction = rotationB[constraint.FreeAxis2D];
-                                    PhysicsDebugDisplaySystem.Line(pivotB - direction * k_Scale, pivotB + direction * k_Scale,
-                                        colorB);
+                                    DebugDraw.Line(pivotB - direction * k_Scale, pivotB + direction * k_Scale, colorB);
                                     float dot = math.dot(direction, diff);
                                     rangeOrigin = pivotB + direction * dot;
                                     rangeDirection = diff - direction * dot;
@@ -124,7 +126,7 @@ namespace Unity.Physics.Authoring
                                         rangeDistance < 1e-5);
                                     break;
                                 case 3:
-                                    PhysicsDebugDisplaySystem.Point(pivotB, k_Scale, colorB);
+                                    DebugDraw.Point(pivotB, k_Scale, colorB);
                                     rangeOrigin = pivotB;
                                     rangeDistance = math.length(diff);
                                     rangeDirection = math.select(diff / rangeDistance, float3.zero,
@@ -136,7 +138,7 @@ namespace Unity.Physics.Authoring
                             }
 
                             // Draw the pivot on A
-                            PhysicsDebugDisplaySystem.Point(pivotA, k_Scale, colorA);
+                            DebugDraw.Point(pivotA, k_Scale, colorA);
 
                             // Draw error
                             float3 rangeA = rangeOrigin + rangeDistance * rangeDirection;
@@ -144,22 +146,22 @@ namespace Unity.Physics.Authoring
                             float3 rangeMax = rangeOrigin + constraint.Max * rangeDirection;
                             if (rangeDistance < constraint.Min)
                             {
-                                PhysicsDebugDisplaySystem.Line(rangeA, rangeMin, colorError);
+                                DebugDraw.Line(rangeA, rangeMin, colorError);
                             }
                             else if (rangeDistance > constraint.Max)
                             {
-                                PhysicsDebugDisplaySystem.Line(rangeA, rangeMax, colorError);
+                                DebugDraw.Line(rangeA, rangeMax, colorError);
                             }
 
                             if (math.length(rangeA - pivotA) > 1e-5f)
                             {
-                                PhysicsDebugDisplaySystem.Line(rangeA, pivotA, colorError);
+                                DebugDraw.Line(rangeA, pivotA, colorError);
                             }
 
                             // Draw the range
                             if (constraint.Min != constraint.Max)
                             {
-                                PhysicsDebugDisplaySystem.Line(rangeMin, rangeMax, colorRange);
+                                DebugDraw.Line(rangeMin, rangeMax, colorRange);
                             }
 
                             break;
@@ -176,7 +178,7 @@ namespace Unity.Physics.Authoring
                                         rotationA[(constrainedAxis + 1) % 3] * k_Scale;
 
                                     // Draw the angle of A
-                                    PhysicsDebugDisplaySystem.Line(pivotA, pivotA + perpendicularInWorld, colorA);
+                                    DebugDraw.Line(pivotA, pivotA + perpendicularInWorld, colorA);
 
                                     // Calculate the relative angle
                                     float angle;
@@ -188,7 +190,7 @@ namespace Unity.Physics.Authoring
 
                                     // Draw the range in B
                                     float3 axis = rotationA[constraint.ConstrainedAxis1D];
-                                    PhysicsDebugDisplaySystem.Arc(pivotB, axis,
+                                    DebugDraw.Arc(pivotB, axis,
                                         math.mul(quaternion.AxisAngle(axis, constraint.Min - angle),
                                             perpendicularInWorld), constraint.Max - constraint.Min, colorB);
 
@@ -202,20 +204,20 @@ namespace Unity.Physics.Authoring
                                     // Draw the cones in B
                                     if (constraint.Min == 0.0f)
                                     {
-                                        PhysicsDebugDisplaySystem.Line(pivotB, pivotB + axisB * k_Scale, colorB);
+                                        DebugDraw.Line(pivotB, pivotB + axisB * k_Scale, colorB);
                                     }
                                     else
                                     {
-                                        PhysicsDebugDisplaySystem.Cone(pivotB, axisB * k_Scale, constraint.Min, colorB);
+                                        DebugDraw.Cone(pivotB, axisB * k_Scale, constraint.Min, colorB);
                                     }
 
                                     if (constraint.Max != constraint.Min)
                                     {
-                                        PhysicsDebugDisplaySystem.Cone(pivotB, axisB * k_Scale, constraint.Max, colorB);
+                                        DebugDraw.Cone(pivotB, axisB * k_Scale, constraint.Max, colorB);
                                     }
 
                                     // Draw the axis in A
-                                    PhysicsDebugDisplaySystem.Arrow(pivotA, axisA * k_Scale, colorA);
+                                    DebugDraw.Arrow(pivotA, axisA * k_Scale, colorA);
 
                                     break;
                                 case 3:
@@ -252,7 +254,7 @@ namespace Unity.Physics.Authoring
     [WorldSystemFilter(WorldSystemFilterFlags.Default)]
     [UpdateInGroup(typeof(PhysicsDebugDisplayGroup))]
     [BurstCompile]
-    internal partial struct DisplayJointsSystem_Default : ISystem
+    partial struct DisplayJointsSystem_Default : ISystem
     {
         private EntityQuery JointsQuery;
         private EntityQuery BodyPairQuery;
@@ -271,7 +273,10 @@ namespace Unity.Physics.Authoring
             if (!SystemAPI.TryGetSingleton(out PhysicsDebugDisplayData debugDisplay) || debugDisplay.DrawJoints == 0)
                 return;
 
-            DisplayJointsJob.ScheduleJob(JointsQuery, BodyPairQuery, ref state);
+            if (!SystemAPI.TryGetSingleton(out DebugDraw draw))
+                return;
+
+            DisplayJointsJob.ScheduleJob(draw, JointsQuery, BodyPairQuery, ref state);
         }
     }
 
@@ -279,7 +284,7 @@ namespace Unity.Physics.Authoring
     [WorldSystemFilter(WorldSystemFilterFlags.Editor)]
     [UpdateInGroup(typeof(PhysicsDebugDisplayGroup_Editor))]
     [BurstCompile]
-    internal partial struct DisplayJointsSystem_Editor : ISystem
+    partial struct DisplayJointsSystem_Editor : ISystem
     {
         private EntityQuery JointsQuery;
         private EntityQuery BodyPairQuery;
@@ -298,7 +303,10 @@ namespace Unity.Physics.Authoring
             if (!SystemAPI.TryGetSingleton(out PhysicsDebugDisplayData debugDisplay) || debugDisplay.DrawJoints == 0)
                 return;
 
-            DisplayJointsJob.ScheduleJob(JointsQuery, BodyPairQuery, ref state);
+            if (!SystemAPI.TryGetSingleton(out DebugDraw draw))
+                return;
+
+            DisplayJointsJob.ScheduleJob(draw, JointsQuery, BodyPairQuery, ref state);
         }
     }
 #endif

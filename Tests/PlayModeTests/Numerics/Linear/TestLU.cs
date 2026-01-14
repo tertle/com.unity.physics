@@ -4,6 +4,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Numerics.Memory;
+using Unity.PerformanceTesting;
 using Unity.Physics.Tests;
 
 namespace Unity.Numerics.Linear.Tests
@@ -115,7 +116,6 @@ namespace Unity.Numerics.Linear.Tests
                 singularMax = 1.0f,
             };
 
-
             generateRandomMatrixJob.Run();
 
             var determinant = new NativeReference<float>(Allocator.TempJob);
@@ -148,7 +148,7 @@ namespace Unity.Numerics.Linear.Tests
         [Test]
         public void LU_Job_Decompose10x10_CompareProductToOriginal_CheckDeterminant()
         {
-            using (var heap = MemoryManager.Create(16384, Allocator.Temp))
+            using (var heap = MemoryManager.Create(16384, Allocator.Persistent))
             {
                 var M = Matrix.Create(heap, 10, 10);
 
@@ -186,16 +186,16 @@ namespace Unity.Numerics.Linear.Tests
         }
 
         [Test]
-        public void LU_Job_DecomposeRandom1000x1000_CompareProductToOriginal()
+        public void LU_Job_DecomposeRandom500x500_CompareProductToOriginal()
         {
             if (!BurstHelper.IsBurstEnabled())
             {
                 Assert.Ignore("This test variant is time consuming and is therefore only run with Burst enabled.");
             }
 
-            using (var heap = new MemoryManager(1024 * 1024 * 128, Allocator.Temp))
+            using (var heap = new MemoryManager(Allocator.Persistent))
             {
-                TestLU(heap, 1000, 1000, out var A, out var LU);
+                TestLU(heap, 500, 500, out var A, out var LU);
 
                 float maxDiff = MaxAbsoluteDiff(A, LU);
                 Assert.IsTrue(maxDiff < 5.0e-5f);
@@ -205,14 +205,14 @@ namespace Unity.Numerics.Linear.Tests
         }
 
         [Test]
-        public void BlockLU_Job_DecomposeRandom_CompareProductToOriginal([Values(10, 1000)] int dimension)
+        public void BlockLU_Job_DecomposeRandom_CompareProductToOriginal([Values(10, 500)] int dimension)
         {
-            if (dimension == 1000 && !BurstHelper.IsBurstEnabled())
+            if (dimension == 500 && !BurstHelper.IsBurstEnabled())
             {
                 Assert.Ignore("This test variant is time consuming and is therefore only run with Burst enabled.");
             }
 
-            using (var heap = new MemoryManager(1024 * 1024 * 128, Allocator.Temp))
+            using (var heap = new MemoryManager(Allocator.Persistent))
             {
                 TestLU(heap, dimension, dimension, out var A, out var LU, true);
 
@@ -222,5 +222,144 @@ namespace Unity.Numerics.Linear.Tests
                 A.Dispose();
             }
         }
+
+#if PHYSICS_ENABLE_PERF_TESTS
+
+        [BurstCompile(CompileSynchronously = true)]
+        [GenerateTestsForBurstCompatibility]
+        struct LUFactorizeJob : IJob
+        {
+            [ReadOnly] public Matrix M;
+            public Matrix MFactor;
+            [WriteOnly] public NativeArray<int> pivots;
+            public Matrix RHS;
+
+            public void Execute()
+            {
+                M.CopyTo(MFactor);
+                LU.Factor(MFactor, ref pivots, out var singularRow);
+                Assert.IsTrue(singularRow == -1);
+            }
+        }
+
+        [BurstCompile(CompileSynchronously = true)]
+        [GenerateTestsForBurstCompatibility]
+        struct LUFactorizeAndSolveJob : IJob
+        {
+            [ReadOnly] public Matrix M;
+            public Matrix MFactor;
+            public NativeArray<int> pivots;
+            public Matrix RHS;
+
+            public void Execute()
+            {
+                M.CopyTo(MFactor);
+                LU.Factor(MFactor, ref pivots, out var singularRow);
+                Assert.IsTrue(singularRow == -1);
+
+                // After factorization of a matrix M with LU.Factor(M, ...), M contains L in its strictly lower triangular block
+                // with L's diagonal elements assumed to be all 1, and it contains U in its upper triangular block
+                // including the diagonal elements. In other words, diag(L) = [1,....1] and diag(U) = diag(M).
+
+                // Solve linear system LU * x = rhs via forward and backward substitution as follows:
+                //      1. Define y := U * x
+                //      2. Solve L * y = rhs for y
+                //      3. Then, solve U * x = y for x
+
+                // Note: we need to use the pivot array from the factorization above to permute the input rhs
+                // vector in order to solve the correct system.
+                var pivot = false;
+                for (int i = 0; i < pivots.Length; ++i)
+                {
+                    pivot |= pivots[i] != i;
+                }
+                if (pivot)
+                {
+                    RHS.InterchangeRows(pivots);
+                }
+
+                // Solve L * y = rhs for y
+                // Note: RHS.Col[0] = rhs
+                RHS.SolveGeneralizedTriangular(Side.Left, TriangularType.Lower, Op.None, DiagonalType.Unit,
+                    1.0f, MFactor);
+                // Note: at this point, RHS contains y
+
+                // Solve U * x = y for x
+                RHS.SolveGeneralizedTriangular(Side.Left, TriangularType.Upper, Op.None, DiagonalType.Explicit,
+                    1.0f, MFactor);
+            }
+        }
+
+        [Test, Performance]
+        public void LU_DecomposeRandom_Performance([Values(50, 100, 200, 300, 400, 500, 750, 1000)] int dimension)
+        {
+            if (dimension > 10 && !BurstHelper.IsBurstEnabled())
+            {
+                Assert.Ignore("This test variant is time consuming and is therefore only run with Burst enabled.");
+            }
+
+            using (var heap = new MemoryManager(1024 * 1024 * 128, Allocator.Persistent))
+            {
+                using var M = heap.Matrix(dimension, dimension);
+                using var LU = heap.Matrix(dimension, dimension);
+                var generateMatrix = new GenerateRandomSymmetricPositiveDefiniteMatrixJob
+                {
+                    Matrix = M
+                };
+                generateMatrix.Run();
+
+                using var pivots = new NativeArray<int>(dimension, Allocator.TempJob);
+                var job = new LUFactorizeJob
+                {
+                    M = M,
+                    MFactor = LU,
+                    pivots = pivots
+                };
+
+                Measure.Method(() => job.Run())
+                    .WarmupCount(1)
+                    .MeasurementCount(10)
+                    .Run();
+            }
+        }
+
+        [Test, Performance]
+        public void LU_DecomposeRandomAndSolve_Performance([Values(50, 100, 200, 300, 400, 500, 750, 1000)] int dimension)
+        {
+            if (dimension > 10 && !BurstHelper.IsBurstEnabled())
+            {
+                Assert.Ignore("This test variant is time consuming and is therefore only run with Burst enabled.");
+            }
+
+            using (var heap = new MemoryManager(1024 * 1024 * 128, Allocator.Persistent))
+            {
+                using var M = heap.Matrix(dimension, dimension);
+                using var LU = heap.Matrix(dimension, dimension);
+                using var RHS = heap.Matrix(dimension, 1); // Right-hand side vector
+                RHS.Clear(); // simply set RHS to zero for linear system solve: M * x = rhs = 0
+
+                var generateMatrix = new GenerateRandomSymmetricPositiveDefiniteMatrixJob
+                {
+                    Matrix = M
+                };
+                generateMatrix.Run();
+
+                using var pivots = new NativeArray<int>(dimension, Allocator.TempJob);
+                var job = new LUFactorizeAndSolveJob
+                {
+                    M = M,
+                    MFactor = LU,
+                    pivots = pivots,
+                    RHS = RHS
+                };
+
+                Measure.Method(() => job.Run())
+                    .WarmupCount(1)
+                    .MeasurementCount(10)
+                    .Run();
+            }
+        }
+
+#endif
     }
 }

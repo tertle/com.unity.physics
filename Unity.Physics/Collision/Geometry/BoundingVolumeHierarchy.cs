@@ -167,8 +167,6 @@ namespace Unity.Physics
             public int4 Data;                               // 16 bytes
             [FieldOffset(112)]
             // Packed node data: 24 bits for parent node index followed by 8 bits for leaf/internal node type flag.
-            // Warning: the layout must ensure that the leaf/internal node type flag appears exactly in the last
-            // byte of the 4 byte m_NodeData member for correct mapping to Havok's BVH node struct.
             private uint m_NodeData;                        // 4 bytes
             [FieldOffset(116)]
             public unsafe fixed ushort NumFreeLeafSlots[4]; // 8 bytes

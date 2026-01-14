@@ -9,6 +9,12 @@ namespace Unity.Physics
     [NoAlias]
     struct AngularLimit2DJacobian
     {
+        public MTransform AnchorFrameInBodyA;
+        public MTransform AnchorFrameInBodyB;
+
+        public RigidTransform WorldFromA;
+        public RigidTransform WorldFromB;
+
         // Free axes in motion space
         public float3 AxisAinA;
         public float3 AxisBinB;
@@ -47,20 +53,26 @@ namespace Unity.Physics
             ConstraintIndexX = (FreeIndex + 1) % 3;
             ConstraintIndexY = (FreeIndex + 2) % 3;
 
+            AxisAinA = aFromConstraint.Rotation[FreeIndex];
+            AxisBinB = bFromConstraint.Rotation[FreeIndex];
+
+            AnchorFrameInBodyA = aFromConstraint;
+            AnchorFrameInBodyB = bFromConstraint;
+
             MinAngle = constraint.Min;
             MaxAngle = constraint.Max;
 
             Tau = tau;
             Damping = damping;
 
-            AxisAinA = aFromConstraint.Rotation[FreeIndex];
-            AxisBinB = bFromConstraint.Rotation[FreeIndex];
-
             Update(motionA, motionB);
         }
 
         public void Update(in MotionData motionA, in MotionData motionB)
         {
+            WorldFromA = motionA.WorldFromMotion;
+            WorldFromB = motionB.WorldFromMotion;
+
             BFromA = math.mul(math.inverse(motionB.WorldFromMotion.rot), motionA.WorldFromMotion.rot);
 
             // Calculate the initial error
@@ -119,24 +131,24 @@ namespace Unity.Physics
             // Calculate the error, adjust by tau and damping, and apply an impulse to correct it
             float futureError = JacobianUtilities.CalculateError(futureAngle, MinAngle, MaxAngle);
             float solveError = JacobianUtilities.CalculateCorrection(futureError, InitialError, Tau, Damping);
-            float2 impulse = -effectiveMass * solveError * stepInput.InvTimestep;
+            float2 impulse = -effectiveMass * solveError * Solver.CalculateInvTimestep(stepInput.Timestep);
 
             velocityA.ApplyAngularImpulse(impulse.x * jacA0 + impulse.y * jacA1);
             velocityB.ApplyAngularImpulse(impulse.x * jacB0 + impulse.y * jacB1);
 
             if ((jacHeader.Flags & JacobianFlags.EnableImpulseEvents) != 0)
             {
-                HandleImpulseEvent(ref jacHeader, impulse, stepInput.IsLastSubstepAndLastSolverIteration, ref impulseEventsWriter);
+                HandleImpulseEvent(ref jacHeader, impulse, stepInput.ExportEventsInThisIteration, ref impulseEventsWriter);
             }
         }
 
-        private void HandleImpulseEvent(ref JacobianHeader jacHeader, float2 impulse, bool isLastIteration, ref NativeStream.Writer impulseEventsWriter)
+        private void HandleImpulseEvent(ref JacobianHeader jacHeader, float2 impulse, bool exportEvent, ref NativeStream.Writer impulseEventsWriter)
         {
             ref ImpulseEventSolverData impulseEventData = ref jacHeader.AccessImpulseEventSolverData();
             impulseEventData.AccumulatedImpulse[ConstraintIndexX] += impulse.x;
             impulseEventData.AccumulatedImpulse[ConstraintIndexY] += impulse.y;
 
-            if (isLastIteration && math.any(math.abs(impulseEventData.AccumulatedImpulse) > impulseEventData.MaxImpulse))
+            if (exportEvent && math.any(math.abs(impulseEventData.AccumulatedImpulse) > impulseEventData.MaxImpulse))
             {
                 impulseEventsWriter.Write(new ImpulseEventData
                 {

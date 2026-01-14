@@ -11,17 +11,21 @@ namespace Unity.Physics.Authoring
     /// the update of this system in any <see cref="PhysicsSystemGroup">physics system group</see> following the first one.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.Default)]
+    [CreateAfter(typeof(PhysicsDebugDisplaySystem_Default))]
     [UpdateInGroup(typeof(PhysicsInitializeGroup), OrderFirst = true)]
-    public partial struct CleanPhysicsDebugDataSystem_Default : ISystem
+    public partial class CleanPhysicsDebugDataSystem_Default : SystemBase
     {
-        public void OnCreate(ref SystemState state)
+        PhysicsDebugDisplaySystem m_DebugDisplaySystem;
+
+        protected override void OnCreate()
         {
-            state.RequireForUpdate<PhysicsDebugDisplayData>();
+            RequireForUpdate<PhysicsDebugDisplayData>();
+            m_DebugDisplaySystem = World.GetExistingSystemManaged<PhysicsDebugDisplaySystem_Default>();
         }
 
-        public void OnUpdate(ref SystemState state)
+        protected override void OnUpdate()
         {
-            DebugDisplay.DebugDisplay.Clear();
+            m_DebugDisplaySystem?.Clear();
         }
     }
 
@@ -29,17 +33,21 @@ namespace Unity.Physics.Authoring
     /// A system which cleans physics debug display data from the previous frame while in edit mode.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.Editor)]
+    [CreateAfter(typeof(PhysicsDebugDisplaySystem_Editor))]
     [UpdateInGroup(typeof(PhysicsDebugDisplayGroup_Editor), OrderFirst = true)]
-    public partial struct CleanPhysicsDebugDataSystem_Editor : ISystem
+    public partial class CleanPhysicsDebugDataSystem_Editor : SystemBase
     {
-        public void OnCreate(ref SystemState state)
+        PhysicsDebugDisplaySystem m_DebugDisplaySystem;
+
+        protected override void OnCreate()
         {
-            state.RequireForUpdate<PhysicsDebugDisplayData>();
+            RequireForUpdate<PhysicsDebugDisplayData>();
+            m_DebugDisplaySystem = World.GetExistingSystemManaged<PhysicsDebugDisplaySystem_Editor>();
         }
 
-        public void OnUpdate(ref SystemState state)
+        protected override void OnUpdate()
         {
-            DebugDisplay.DebugDisplay.Clear();
+            m_DebugDisplaySystem?.Clear();
         }
     }
 #endif

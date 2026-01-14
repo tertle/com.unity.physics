@@ -171,7 +171,7 @@ namespace Unity.Physics
                 // Calculate the impulse to correct the error
                 float3 solveError = solveDistanceError * futureDirection;
                 float3x3 effectiveMass = JacobianUtilities.BuildSymmetricMatrix(effectiveMassDiag, effectiveMassOffDiag);
-                impulse = math.mul(effectiveMass, solveError) * stepInput.InvTimestep;
+                impulse = math.mul(effectiveMass, solveError) * Solver.CalculateInvTimestep(stepInput.Timestep);
             }
 
             // Apply the impulse
@@ -180,7 +180,7 @@ namespace Unity.Physics
 
             if ((jacHeader.Flags & JacobianFlags.EnableImpulseEvents) != 0)
             {
-                HandleImpulseEvent(ref jacHeader, impulse, stepInput.IsLastSubstepAndLastSolverIteration, ref impulseEventsWriter);
+                HandleImpulseEvent(ref jacHeader, impulse, stepInput.ExportEventsInThisIteration, ref impulseEventsWriter);
             }
         }
 
@@ -227,16 +227,13 @@ namespace Unity.Physics
             return JacobianUtilities.CalculateError(distance, MinDistance, MaxDistance);
         }
 
-        private void HandleImpulseEvent(ref JacobianHeader jacHeader, in float3 appliedImpulse, bool isLastIteration, ref NativeStream.Writer impulseEventsWriter)
+        private void HandleImpulseEvent(ref JacobianHeader jacHeader, in float3 appliedImpulse, bool exportEvent, ref NativeStream.Writer impulseEventsWriter)
         {
             ref ImpulseEventSolverData impulseEventData = ref jacHeader.AccessImpulseEventSolverData();
             impulseEventData.AccumulatedImpulse += appliedImpulse;
 
-            if (isLastIteration && math.any(math.abs(impulseEventData.AccumulatedImpulse) > impulseEventData.MaxImpulse))
+            if (exportEvent && math.any(math.abs(impulseEventData.AccumulatedImpulse) > impulseEventData.MaxImpulse))
             {
-                // We have to convert our impulse into constraint space to match what havok is returning from their impulses
-                // currently the linear motions are calculated in world space, therefore we need to convert it into constraint space
-
                 // Calculate constraint B in World-space
                 var constraintBinWorld = math.mul(WorldFromB,
                     new RigidTransform(BodyFromConstraintB.Rotation, BodyFromConstraintB.Translation));

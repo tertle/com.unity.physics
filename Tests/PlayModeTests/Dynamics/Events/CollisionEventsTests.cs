@@ -3,9 +3,9 @@ using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 
-namespace Unity.Physics.Tests.Dynamics.CollisionEvents
+namespace Unity.Physics.Tests.Dynamics.Events
 {
-    class CollisionEventsTests
+    class CollisionEventsTests : EventsTestBase
     {
         // Tests the situation where none of the contact points
         // reaches the contact plane after sub-integration using
@@ -96,5 +96,21 @@ namespace Unity.Physics.Tests.Dynamics.CollisionEvents
             // Dispose the world data
             simpleWorld.Dispose();
         }
+
+        /// <summary>
+        /// Tests that the expected number of collision events are exported regardless of the chosen
+        /// solver types or threading options.
+        /// </summary>
+        [Test]
+        public void ExportCollisionEventsTest_StepJobs([Values] bool multiThreaded, [Values] SolverTypes solverTypes)
+            => VerifyExportEvents_StepJobs(multiThreaded, solverTypes, EventType.Collision);
+
+        /// <summary>
+        /// Tests that the expected number of collision events are exported in immediate mode regardless of the chosen
+        /// solver types.
+        /// </summary>
+        [Test]
+        public void ExportCollisionEventsTest_StepImmediate([Values] SolverTypes solverTypes)
+            => VerifyExportEvents_StepImmediate(solverTypes, EventType.Collision);
     }
 }

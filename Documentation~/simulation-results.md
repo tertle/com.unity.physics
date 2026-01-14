@@ -51,7 +51,7 @@ public partial struct GetNumCollisionEventsSystem : ISystem
         state.Dependency = new CountNumCollisionEvents
         {
             NumCollisionEvents = numCollisionEvents
-        }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>());
+        }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
 
         // ...
     }
@@ -91,7 +91,7 @@ public partial struct GetNumTriggerEventsSystem : ISystem
         state.Dependency = new CountNumTriggerEvents
         {
             NumTriggerEvents = numTriggerEvents
-        }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>());
+        }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
 
         // ...
     }

@@ -16,17 +16,14 @@ namespace Unity.Physics
         void Execute(ImpulseEvent impulseEvent);
     }
 
-#if !HAVOK_PHYSICS_EXISTS
     /// <summary>   Interface for impulse events job. </summary>
     public interface IImpulseEventsJob : IImpulseEventsJobBase
     {
     }
-#endif
 
     /// <summary>   An extension class for scheduling ImpulseEventsJob. </summary>
     public static class IImpulseEventJobExtensions
     {
-#if !HAVOK_PHYSICS_EXISTS
         /// <summary>   Default Schedule() implementation for IImpulseEventJob. </summary>
         ///
         /// <typeparam name="T">    Generic type parameter. </typeparam>
@@ -46,33 +43,7 @@ namespace Unity.Physics
             return ScheduleUnityPhysicsImpulseEventsJob(jobData, simulationSingleton.AsSimulation(), inputDeps);
         }
 
-#else
-        /// <summary>
-        /// In this case Schedule() implementation for IImpulseEventsJob is provided by the Havok.Physics
-        /// assembly. This is a stub to catch when that assembly is missing.
-        /// </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="jobData">              The jobData to act on. </param>
-        /// <param name="simulation">           The simulation. </param>
-        /// <param name="inputDeps">            The input deps. </param>
-        /// <param name="_causeCompileError">   (Optional) The cause compile error. </param>
-        ///
-        /// <returns>   A JobHandle. </returns>
-        [Obsolete("This error occurs when HAVOK_PHYSICS_EXISTS is defined but Havok.Physics is missing from your package's asmdef references. (DoNotRemove)", true)]
-        public static unsafe JobHandle Schedule<T>(this T jobData, ISimulation simulation, JobHandle inputDeps,
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF _causeCompileError = HAVOK_PHYSICS_MISSING_FROM_ASMDEF.HAVOK_PHYSICS_MISSING_FROM_ASMDEF)
-            where T : struct, IImpulseEventsJobBase
-        {
-            return new JobHandle();
-        }
 
-        /// <summary>   Values that represent havok physics missing from asmdefs. </summary>
-        public enum HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        {
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        }
-#endif
         internal static unsafe JobHandle ScheduleUnityPhysicsImpulseEventsJob<T>(T jobData, Simulation simulation, JobHandle inputDeps)
             where T : struct, IImpulseEventsJobBase
         {

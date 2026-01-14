@@ -202,6 +202,14 @@ namespace Unity.Physics.Tests.Collision.Queries
         [Timeout(600000)]
         public unsafe void ConvexConvexDistanceEdgeCaseTest()
         {
+            bool isAppleSilicon = UnityEngine.SystemInfo.processorType.Contains("Apple M");
+            bool isCI = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("CI"));
+
+            if (isCI && isAppleSilicon)
+            {
+                Assert.Ignore("[DOTS-11051] The test consistently fails on Apple Silicon VMs with this specific state");
+            }
+
             Random rnd = new Random(0x90456148);
             uint dbgShape = 0;
             uint dbgTest = 0;
@@ -1029,6 +1037,40 @@ namespace Unity.Physics.Tests.Collision.Queries
             // make sure we have contacts
             var contacts = contactStream.ToNativeArray<ContactHeader>(Allocator.Temp);
             Assert.Greater(contacts.Length, 0);
+        }
+
+        [Test]
+        public void ColliderCheckSphereTest([Values] ColliderType colliderType, [Values] QueryInteraction queryInteraction)
+        {
+            var random = new Random(42);
+            using var collider = TestUtils.GenerateRandomCollider(ref random, colliderType);
+            var bounds = collider.Value.CalculateAabb();
+
+            var hit = collider.Value.CheckSphere(bounds.Center, math.cmax(bounds.Extents), CollisionFilter.Default, queryInteraction);
+            Assert.IsTrue(hit);
+        }
+
+        [Test]
+        public void ColliderCheckBoxTest([Values] ColliderType colliderType, [Values] QueryInteraction queryInteraction)
+        {
+            var random = new Random(42);
+            using var collider = TestUtils.GenerateRandomCollider(ref random, colliderType);
+            var bounds = collider.Value.CalculateAabb();
+
+            var hit = collider.Value.CheckBox(center: bounds.Center, orientation: quaternion.identity, halfExtents: bounds.Extents / 2f, CollisionFilter.Default, queryInteraction);
+            Assert.IsTrue(hit);
+        }
+
+        [Test]
+        public void ColliderCheckCapsuleTest([Values] ColliderType colliderType, [Values] QueryInteraction queryInteraction)
+        {
+            var random = new Random(42);
+            using var collider = TestUtils.GenerateRandomCollider(ref random, colliderType);
+            var bounds = collider.Value.CalculateAabb();
+
+            var axis = bounds.Extents / 2f;
+            var hit = collider.Value.CheckCapsule(bounds.Center - axis, bounds.Center + axis, math.cmax(bounds.Extents), CollisionFilter.Default, queryInteraction);
+            Assert.IsTrue(hit);
         }
     }
 }

@@ -1,6 +1,5 @@
 using Unity.Burst;
 using Unity.Collections;
-using Unity.Entities;
 using Unity.Mathematics;
 using static Unity.Physics.Math;
 
@@ -10,6 +9,12 @@ namespace Unity.Physics
     [NoAlias]
     struct AngularLimit3DJacobian
     {
+        public MTransform AnchorFrameInBodyA;
+        public MTransform AnchorFrameInBodyB;
+
+        public RigidTransform WorldFromA;
+        public RigidTransform WorldFromB;
+
         // Relative angle limits
         public float MinAngle;
         public float MaxAngle;
@@ -36,6 +41,9 @@ namespace Unity.Physics
             MotionData motionA, MotionData motionB,
             Constraint constraint, float tau, float damping)
         {
+            AnchorFrameInBodyA = aFromConstraint;
+            AnchorFrameInBodyB = bFromConstraint;
+
             RefBFromA = new quaternion(math.mul(bFromConstraint.Rotation, aFromConstraint.InverseRotation));
             MinAngle = constraint.Min;
             MaxAngle = constraint.Max;
@@ -47,6 +55,9 @@ namespace Unity.Physics
 
         public void Update(in MotionData motionA, in MotionData motionB)
         {
+            WorldFromA = motionA.WorldFromMotion;
+            WorldFromB = motionB.WorldFromMotion;
+
             BFromA = math.mul(math.inverse(motionB.WorldFromMotion.rot), motionA.WorldFromMotion.rot);
 
             quaternion jointOrientation = math.mul(math.inverse(RefBFromA), BFromA);
@@ -125,7 +136,7 @@ namespace Unity.Physics
             // The errors (initial/future/solve) are floats because they are relative to the jac0 rotation frame
             float futureError = JacobianUtilities.CalculateError(futureAngle, MinAngle, MaxAngle);
             float solveError = JacobianUtilities.CalculateCorrection(futureError, InitialError, Tau, Damping);
-            float solveVelocity = -solveError * stepInput.InvTimestep;
+            float solveVelocity = -solveError * Solver.CalculateInvTimestep(stepInput.Timestep);
             float3 impulseA = solveVelocity * (jacA0 * effectiveMass.x + jacA1 * effectiveMass.y + jacA2 * effectiveMass.z);
             float3 impulseB = solveVelocity * (jacB0 * effectiveMass.x + jacB1 * effectiveMass.y + jacB2 * effectiveMass.z);
             velocityA.ApplyAngularImpulse(impulseA);
@@ -134,15 +145,15 @@ namespace Unity.Physics
             if ((jacHeader.Flags & JacobianFlags.EnableImpulseEvents) != 0)
             {
                 HandleImpulseEvent(ref jacHeader, solveVelocity * jointOrientation.value.xyz,
-                    stepInput.IsLastSubstepAndLastSolverIteration, ref impulseEventsWriter);
+                    stepInput.ExportEventsInThisIteration, ref impulseEventsWriter);
             }
         }
 
-        private void HandleImpulseEvent(ref JacobianHeader jacHeader, float3 impulse, bool isLastIteration, ref NativeStream.Writer impulseEventsWriter)
+        private void HandleImpulseEvent(ref JacobianHeader jacHeader, float3 impulse, bool exportEvent, ref NativeStream.Writer impulseEventsWriter)
         {
             ref ImpulseEventSolverData impulseEventData = ref jacHeader.AccessImpulseEventSolverData();
             impulseEventData.AccumulatedImpulse += impulse;
-            if (isLastIteration && math.any(math.abs(impulseEventData.AccumulatedImpulse) > impulseEventData.MaxImpulse))
+            if (exportEvent && math.any(math.abs(impulseEventData.AccumulatedImpulse) > impulseEventData.MaxImpulse))
             {
                 impulseEventsWriter.Write(new ImpulseEventData
                 {

@@ -81,6 +81,51 @@ namespace Unity.Physics
         };
     }
 
+    /// <summary>
+    /// Stores triangle vertex position data for two intersecting colliders,
+    /// including main transform data and the leaf transform from a static mesh.
+    /// </summary>
+    struct ContactJacobianPolygonData
+    {
+        /// <summary> Represents the static body's position, rotation, and scale. </summary>
+        public AffineTransform Transform;
+        /// <summary> Stores the position, rotation, and scale of the leaf polygon used for ray evaluation. </summary>
+        public AffineTransform LeafTransform;
+        /// <summary>
+        /// Define the triangle polygon from (<see cref="LeafTransform"/>) used to
+        ///   predict potential collisions in the next frame.
+        /// </summary>
+        public float3 Vertex0;
+        /// <summary>
+        /// Define the triangle polygon from (<see cref="LeafTransform"/>) used to
+        ///   predict potential collisions in the next frame.
+        /// </summary>
+        public float3 Vertex1;
+        /// <summary>
+        /// Define the triangle polygon from (<see cref="LeafTransform"/>) used to
+        ///   predict potential collisions in the next frame.
+        /// </summary>
+        public float3 Vertex2;
+        /// <summary>
+        /// Derived from the opposing collider’s center of mass. If Body A collides
+        ///   with Body B, A’s data is stored while the center of mass is taken from B.
+        /// </summary>
+        public float3 CenterOfMass;
+        /// <summary>
+        /// The world-space position where two colliders make contact during the Jacobian Build stage.
+        ///   This point is later used in the solve phase to determine whether the predicted collision will occur.
+        /// </summary>
+        public float3 ContactPoint;
+        /// <summary> The normal contact point is used to determine the other point where the collision occurs. </summary>
+        public float3 Normal;
+        /// <summary> Indicates whether Body A or B is static. This is required for setting other properties. </summary>
+        public bool IsBodyAStatic;
+        /// <summary> Indicates whether Body A or B is static. This is required for setting other properties. </summary>
+        public bool IsBodyBStatic;
+        /// <summary> Determines whether the <see cref="LeafTransform"/> is a valid polygon child. </summary>
+        public bool IsValid;
+    }
+
     /// <summary>   A base contact jacobian. </summary>
     struct BaseContactJacobian
     {
@@ -150,7 +195,9 @@ namespace Unity.Physics
         {
             ref ContactJacAngAndVelToReachCp jacAngular = ref jacobianHeader.AccessAngularJacobian(contactPointIndex);
             ContactPoint contact = contactReader.Read<ContactPoint>();
+            // world space contact point on surface of B
             float3 pointOnB = contact.Position;
+            // world space contact point on surface of A
             float3 pointOnA = contact.Position + normal * contact.Distance;
             float3 armA = pointOnA - worldFromA.Translation;
             float3 armB = pointOnB - worldFromB.Translation;
@@ -173,6 +220,7 @@ namespace Unity.Physics
             // if solveVelocity = -1 --> VelToReachCp = +1 (is depenetrating), solveDistance < 0, contact.Distance < 0
             // if solveVelocity = +1 --> VelToReachCp = -1   (is approaching), solveDistance > 0
             solveVelocity = math.max(-maxDepenetrationVelocity, solveVelocity);
+            // velocity required to reach the contact plane in one step, capped by |maxDepentrationVelocity|
             jacAngular.VelToReachCp = -solveVelocity;
             jacAngular.ContactDistance = contact.Distance;
 
@@ -182,7 +230,7 @@ namespace Unity.Physics
 
             if (jacobianHeader.HasDetailedStaticMeshCollision)
             {
-                ref JacobianPolygonData jacobianData = ref jacobianHeader.AccessJacobianContactData();
+                ref ContactJacobianPolygonData jacobianData = ref jacobianHeader.AccessJacobianContactData();
                 jacobianData.ContactPoint = contact.Position;
                 jacobianData.Normal = normal;
             }
@@ -327,7 +375,7 @@ namespace Unity.Physics
             }
 
             // TODO: if ApplyImpulse= false for all NumContacts, can skip friction building
-            bool bothMotionsAreKinematic = velocityA.IsKinematic && velocityB.IsKinematic;
+            bool bothMotionsAreKinematic = !jacobianHeader.IsContactDynamic;
             if (!bothMotionsAreKinematic)
             {
                 BuildFrictionJacobians(ref contactJacobian, ref CenterA, ref CenterB, worldFromA, worldFromB,
@@ -351,7 +399,7 @@ namespace Unity.Physics
             Solver.MotionStabilizationInput motionStabilizationSolverInputA,
             Solver.MotionStabilizationInput motionStabilizationSolverInputB)
         {
-            bool bothMotionsAreKinematic = velocityA.IsKinematic && velocityB.IsKinematic;
+            bool bothMotionsAreKinematic = !jacHeader.IsContactDynamic;
             if (bothMotionsAreKinematic)
             {
                 // Note that static bodies are assigned with MotionVelocity.Zero.
@@ -393,7 +441,7 @@ namespace Unity.Physics
 
                 if (jacHeader.HasDetailedStaticMeshCollision)
                 {
-                    ref JacobianPolygonData jacContact = ref jacHeader.AccessJacobianContactData();
+                    ref ContactJacobianPolygonData jacContact = ref jacHeader.AccessJacobianContactData();
                     // Checking whether the contact needs processing.
                     if (!WillHitNextFrame(ref jacContact, ref jacAngular, tempVelocityA, tempVelocityB, stepInput.Timestep))
                         continue;
@@ -435,7 +483,7 @@ namespace Unity.Physics
             }
 
             // Export collision event
-            if (stepInput.IsLastSubstepAndLastSolverIteration && jacHeader.HasContactManifold &&
+            if (stepInput.ExportEventsInThisIteration && jacHeader.HasContactManifold &&
                 (SumImpulsesOverSubsteps > 0.0f || forceCollisionEvent))
             {
                 ExportCollisionEvent(SumImpulsesOverSubsteps, ref jacHeader, ref collisionEventsWriter);
@@ -502,7 +550,7 @@ namespace Unity.Physics
                 }
 
                 // Clip TODO.ma calculate some contact radius and use it to influence balance between linear and angular friction
-                float maxImpulse = sumImpulses * CoefficientOfFriction * stepInput.InvNumSolverIterations;
+                float maxImpulse = sumImpulses * CoefficientOfFriction / stepInput.NumSolverIterations;
 
                 float frictionImpulseSquared = math.lengthsq(imp);
                 imp *= math.min(1.0f, maxImpulse * math.rsqrt(frictionImpulseSquared));
@@ -535,14 +583,19 @@ namespace Unity.Physics
         public void SolveInfMassPair(ref JacobianHeader jacHeader, MotionVelocity velocityA, MotionVelocity velocityB,
             Solver.StepInput stepInput, ref NativeStream.Writer collisionEventsWriter)
         {
-            // Infinite mass pairs are only interested in collision events,
-            // so only last solver iteration is performed in that case
-            if (!stepInput.IsLastSubstepAndLastSolverIteration)
+            // Infinite mass pairs are only interested in collision events.
+            // So we skip this iteration unless we need to export events in it.
+            if (!stepInput.ExportEventsInThisIteration)
             {
                 return;
             }
 
+            ExportInfMassEvent(ref jacHeader, velocityA, velocityB, stepInput.Timestep, ref collisionEventsWriter);
+        }
 
+        public void ExportInfMassEvent(ref JacobianHeader jacHeader, in MotionVelocity velocityA, in MotionVelocity velocityB,
+            float timestep, ref NativeStream.Writer collisionEventsWriter)
+        {
             // Calculate normal impulses and fire collision event
             // if at least one contact point would have an impulse applied
             for (int j = 0; j < BaseJacobian.NumContacts; j++)
@@ -550,8 +603,8 @@ namespace Unity.Physics
                 ref ContactJacAngAndVelToReachCp jacAngular = ref jacHeader.AccessAngularJacobian(j);
                 if (jacHeader.HasDetailedStaticMeshCollision)
                 {
-                    ref JacobianPolygonData jacContact = ref jacHeader.AccessJacobianContactData();
-                    if (!WillHitNextFrame(ref jacContact, ref jacAngular, velocityA, velocityB, stepInput.Timestep))
+                    ref ContactJacobianPolygonData jacContact = ref jacHeader.AccessJacobianContactData();
+                    if (!WillHitNextFrame(ref jacContact, ref jacAngular, velocityA, velocityB, timestep))
                         continue;
                 }
 
@@ -568,7 +621,7 @@ namespace Unity.Physics
             }
         }
 
-        unsafe bool WillHitNextFrame(ref JacobianPolygonData jacContact,
+        unsafe bool WillHitNextFrame(ref ContactJacobianPolygonData jacContact,
             ref ContactJacAngAndVelToReachCp jacAngular,
             MotionVelocity velocityA,
             MotionVelocity velocityB,
@@ -691,7 +744,7 @@ namespace Unity.Physics
             velocityB.ApplyAngularImpulse(impulse * jacAngular.AngularB * inverseInertiaScaleB);
         }
 
-        private unsafe void ExportCollisionEvent(float totalAccumulatedImpulse, [NoAlias] ref JacobianHeader jacHeader,
+        public unsafe void ExportCollisionEvent(float totalAccumulatedImpulse, [NoAlias] ref JacobianHeader jacHeader,
             [NoAlias] ref NativeStream.Writer collisionEventsWriter)
         {
             // Write size before every event
@@ -819,12 +872,19 @@ namespace Unity.Physics
         public void Solve(ref JacobianHeader jacHeader, ref MotionVelocity velocityA, ref MotionVelocity velocityB,
             Solver.StepInput stepInput, ref NativeStream.Writer triggerEventsWriter)
         {
-            // Export trigger events only in last solver iteration of last substep iteration
-            if (!stepInput.IsLastSubstepAndLastSolverIteration)
+            // Skip this iteration, unless we are required to export trigger events in this iteration.
+            if (!stepInput.ExportEventsInThisIteration)
             {
                 return;
             }
 
+            ExportEvent(ref jacHeader, velocityA, velocityB, ref triggerEventsWriter);
+        }
+
+        // Export trigger event
+        internal void ExportEvent(ref JacobianHeader jacHeader, in MotionVelocity velocityA, in MotionVelocity velocityB,
+                ref NativeStream.Writer triggerEventsWriter)
+        {
             // A trigger event will be generated for only the first contact point with the required velocity
             for (int j = 0; j < BaseJacobian.NumContacts; j++)
             {

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Unity.Physics.Authoring;
 using UnityEditor;
 using UnityEngine;
@@ -29,12 +28,19 @@ namespace Unity.Physics.Editor
 
         string[] DefaultOptions =>
             m_DefaultOptions ?? (
-                m_DefaultOptions =
-                    Enumerable.Range(0, MaxNumCategories)
-                        .Select(i => string.Format(DefaultFormatString, i))
-                        .ToArray()
+                m_DefaultOptions = CreateDefaultOptions()
             );
         string[] m_DefaultOptions;
+
+        string[] CreateDefaultOptions()
+        {
+            var options = new string[MaxNumCategories];
+            for (int i = 0; i < MaxNumCategories; i++)
+            {
+                options[i] = string.Format(DefaultFormatString, i);
+            }
+            return options;
+        }
 
         string[] GetOptions()
         {
@@ -42,13 +48,21 @@ namespace Unity.Physics.Editor
                 return m_Options;
 
             var guids = AssetDatabase.FindAssets($"t:{typeof(T).Name}");
-            m_NamesAssets = guids
-                .Select(AssetDatabase.GUIDToAssetPath)
-                .Select(AssetDatabase.LoadAssetAtPath<T>)
-                .Where(c => c != null)
-                .ToArray();
 
-            m_Options = m_NamesAssets.FirstOrDefault()?.TagNames.ToArray() ?? DefaultOptions;
+            var assetsList = new List<T>();
+            for (int i = 0; i < guids.Length; i++)
+            {
+                var assetPath = AssetDatabase.GUIDToAssetPath(guids[i]);
+                var asset = AssetDatabase.LoadAssetAtPath<T>(assetPath);
+                if (asset != null)
+                {
+                    assetsList.Add(asset);
+                }
+            }
+            m_NamesAssets = assetsList.ToArray();
+
+            m_Options = m_NamesAssets.Length > 0 ? new List<string>(m_NamesAssets[0].TagNames).ToArray() : DefaultOptions;
+
             for (var i = 0; i < m_Options.Length; ++i)
             {
                 if (string.IsNullOrEmpty(m_Options[i]))
@@ -216,10 +230,22 @@ namespace Unity.Physics.Editor
                 {
                     position.width = EditorGUIUtility.singleLineHeight;
                     position.x = controlPosition.xMax + EditorGUIUtility.standardVerticalSpacing;
+
+                    // Find first non-null asset name
+                    string firstAssetName = null;
+                    for (int i = 0; i < m_NamesAssets.Length; i++)
+                    {
+                        if (m_NamesAssets[i] != null)
+                        {
+                            firstAssetName = m_NamesAssets[i].name;
+                            break;
+                        }
+                    }
+
                     Styles.MultipleAssetsWarning.tooltip = string.Format(
                         Styles.MultipleAssetsTooltip,
                         ObjectNames.NicifyVariableName(typeof(T).Name),
-                        m_NamesAssets.FirstOrDefault(n => n != null)?.name
+                        firstAssetName
                     );
                     GUIStyle.none.Draw(position, Styles.MultipleAssetsWarning, id);
                 }

@@ -99,6 +99,8 @@ namespace Unity.Physics.Systems
         /// <value> The have static bodies changed flag. </value>
         public NativeReference<int> HaveStaticBodiesChanged => PhysicsData.HaveStaticBodiesChanged;
 
+        internal uint LastSystemVersion;
+
 #if (UNITY_EDITOR || DEVELOPMENT_BUILD) && !UNITY_PHYSICS_DISABLE_INTEGRITY_CHECKS
         internal NativeParallelHashMap<uint, long> IntegrityCheckMap;
 #endif
@@ -170,6 +172,16 @@ namespace Unity.Physics.Systems
                 ref state.EntityManager.GetComponentDataRW<BuildPhysicsWorldData>(state.SystemHandle).ValueRW;
             buildPhysicsData.CompleteInputDependency();
 
+            // Update last system version for change detection only for the default world, so that custom physics worlds
+            // can have independent change detection.
+            var isDefaultWorld = buildPhysicsData.WorldFilter.Equals(PhysicsWorldIndex.Default);
+            if (isDefaultWorld)
+            {
+                buildPhysicsData.LastSystemVersion = state.LastSystemVersion;
+            }
+
+            var lastSystemVersion = buildPhysicsData.LastSystemVersion;
+
             float timeStep = SystemAPI.Time.DeltaTime;
 
             if (!SystemAPI.TryGetSingleton(out PhysicsStep stepComponent))
@@ -181,7 +193,7 @@ namespace Unity.Physics.Systems
                 ref buildPhysicsData.PhysicsData, state.Dependency,
                 timeStep, stepComponent.CollisionTolerance, stepComponent.MultiThreaded > 0,
                 stepComponent.IncrementalDynamicBroadphase, stepComponent.IncrementalStaticBroadphase,
-                stepComponent.Gravity, state.LastSystemVersion);
+                stepComponent.Gravity, lastSystemVersion);
 
             SystemAPI.SetSingleton(new PhysicsWorldSingleton
             {
@@ -581,8 +593,9 @@ namespace Unity.Physics.Systems
                 analyticsData.ValueRO.m_MaxNumberOfDynamicBodiesInAScene,
                 (uint)physicsWorld.NumDynamicBodies);
 
-            if (physicsWorld.NumJoints == 0 && physicsWorld.NumBodies <= 1)
+            if (physicsWorld.NumBodies <= 1)
             {
+                // No bodies or only default body. Thus, also no simulated joints. Skip.
                 return;
             }
             // else:
@@ -595,14 +608,11 @@ namespace Unity.Physics.Systems
                 state.WorldUpdateAllocator, NativeArrayOptions.ClearMemory);
 
             JobHandle jointAnalyticsJob = default;
-            if (physicsWorld.NumJoints > 0)
+            jointAnalyticsJob = new AnalyticsJobs.ParallelJointAnalyticsJob
             {
-                jointAnalyticsJob = new AnalyticsJobs.ParallelJointAnalyticsJob
-                {
-                    JointAnalyticsData = jointAnalyticsData,
-                    Joints = physicsWorld.Joints
-                }.Schedule(physicsWorld.NumJoints, 32, state.Dependency);
-            }
+                JointAnalyticsData = jointAnalyticsData,
+                Joints = physicsWorld.Joints
+            }.Schedule(physicsWorld.DynamicsWorld.InternalJointsList, 32, state.Dependency);
 
             JobHandle bodiesAnalyticsJob = default;
             // Check if we have more bodies than the default static body
@@ -629,7 +639,7 @@ namespace Unity.Physics.Systems
     internal static class AnalyticsJobs
     {
         [BurstCompile]
-        internal struct ParallelJointAnalyticsJob : IJobParallelFor
+        internal struct ParallelJointAnalyticsJob : IJobParallelForDefer
         {
             [NativeSetThreadIndex] private int m_ThreadIndex;
             [NativeDisableParallelForRestriction]

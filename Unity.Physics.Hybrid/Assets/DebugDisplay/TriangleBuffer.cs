@@ -5,11 +5,10 @@ using Unity.Mathematics;
 
 namespace Unity.DebugDisplay
 {
-    internal struct TriangleBuffer : IDisposable
+    struct TriangleBuffer : IDisposable
     {
-        internal UnsafeList<Instance> m_Instance;
-
-        private bool m_ResizeRequested;
+        NativeList<Instance> m_Buffer;
+        NativeReference<Unit> m_BufferAllocations;
 
         internal struct Instance
         {
@@ -21,14 +20,14 @@ namespace Unity.DebugDisplay
 
         internal void Initialize(int size)
         {
-            m_Instance = new UnsafeList<Instance>(size, Allocator.Persistent);
-            m_Instance.Resize(size);
-            m_ResizeRequested = false;
+            m_Buffer = new NativeList<Instance>(size, Allocator.Persistent);
+            m_Buffer.Resize(size, NativeArrayOptions.UninitializedMemory);
+            m_BufferAllocations = new NativeReference<Unit>(Allocator.Persistent);
         }
 
         internal void SetTriangle(float3 vertex0, float3 vertex1, float3 vertex2, float3 normal, Unity.DebugDisplay.ColorIndex colorIndex, int index)
         {
-            m_Instance[index] = new Instance
+            m_Buffer[index] = new Instance
             {
                 m_vertex0 = new float4(vertex0, colorIndex.value),
                 m_vertex1 = new float4(vertex1, colorIndex.value),
@@ -37,28 +36,41 @@ namespace Unity.DebugDisplay
             };
         }
 
-        internal int Size => m_Instance.Length;
-
-        internal void RequestResize()
-        {
-            m_ResizeRequested = true;
-        }
-
-        internal bool ResizeRequested => m_ResizeRequested;
+        internal int Size => m_Buffer.Length;
+        internal int Filled => m_BufferAllocations.Value.Filled;
+        internal bool ResizeRequired => m_BufferAllocations.Value.m_ResizeRequired;
 
         internal void ClearTriangle(int index)
         {
-            m_Instance[index] = new Instance {};
+            m_Buffer[index] = new Instance {};
+        }
+
+        internal NativeArray<Instance> AsArray()
+        {
+            return m_Buffer.AsArray();
         }
 
         public void Dispose()
         {
-            m_Instance.Dispose();
+            m_Buffer.Dispose();
+            m_BufferAllocations.Dispose();
         }
 
-        internal Unit AllocateAll()
+        internal Unit AllocateAtomic(int count)
         {
-            return new Unit(m_Instance.Length);
+            Physics.SafetyChecks.CheckAreEqualAndThrow(m_BufferAllocations.IsCreated, true);
+
+            unsafe
+            {
+                return m_BufferAllocations.GetUnsafePtrWithoutChecks()->AllocateAtomic(count);
+            }
+        }
+
+        internal void AllocateAll()
+        {
+            Physics.SafetyChecks.CheckAreEqualAndThrow(m_BufferAllocations.IsCreated, true);
+
+            m_BufferAllocations.Value = new Unit(m_Buffer.Length);
         }
     }
 }

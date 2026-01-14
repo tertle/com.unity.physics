@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
-using System.Linq;
+using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.Build;
 
@@ -14,9 +15,19 @@ namespace Unity.Physics.Authoring
         {
             var fromBuildTargetGroup = NamedBuildTarget.FromBuildTargetGroup(EditorUserBuildSettings.selectedBuildTargetGroup);
             var definesStr = PlayerSettings.GetScriptingDefineSymbols(fromBuildTargetGroup);
-            var defines = definesStr.Split(';').ToList();
-            var found = defines.Find(define => define.Equals(k_CustomDefine));
-            if (found == null)
+            var defines = new List<string>(definesStr.Split(';'));
+
+            bool found = false;
+            foreach (var define in defines)
+            {
+                if (define.Equals(k_CustomDefine))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
             {
                 defines.Add(k_CustomDefine);
                 PlayerSettings.SetScriptingDefineSymbols(fromBuildTargetGroup, string.Join(";", defines.ToArray()));

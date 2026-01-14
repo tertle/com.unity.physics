@@ -543,7 +543,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                             }
                         }
                     }
-                    else
+                    else // type == TriangularType.Lower
                     {
                         for (int j = 0; j < NumCols; j++)
                         {
@@ -570,7 +570,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                     }
                 }
                 // Form  B = alpha * inv(A') * B.
-                else
+                else // op == Op.Transpose
                 {
                     if (type == TriangularType.Upper)
                     {
@@ -592,7 +592,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                             }
                         }
                     }
-                    else
+                    else // type == TriangularType.Lower
                     {
                         for (int j = 0; j < NumCols; j++)
                         {
@@ -615,7 +615,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                 }
             }
             // Form B = alpha * B * inv(A).
-            else
+            else // side == Side.Right
             {
                 if (op == Op.None)
                 {
@@ -645,7 +645,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                             }
                         }
                     }
-                    else
+                    else // type == TriangularType.Lower
                     {
                         for (int j = NumCols - 1; j >= 0; j--)
                         {
@@ -673,7 +673,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                     }
                 }
                 // Form B = alpha*B*inv(A').
-                else
+                else // op == Op.Transpose
                 {
                     if (type == TriangularType.Upper)
                     {
@@ -698,7 +698,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
                             }
                         }
                     }
-                    else
+                    else // type == TriangularType.Lower
                     {
                         for (int k = 0; k < NumCols; k++)
                         {

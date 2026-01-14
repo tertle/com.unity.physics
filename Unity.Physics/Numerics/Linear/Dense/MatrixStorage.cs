@@ -65,7 +65,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
             {
                 m.rows[i] = Vector.Create(heap,
                     data:   m.data + i,
-                    stride: numRows,
+                    stride: numRows, // rows are NOT contiguous in memory since data layout is column-major (see below)
                     size:   numCols);
             }
 
@@ -73,7 +73,7 @@ namespace Unity.Numerics.Linear.Dense.Primitives
             {
                 m.cols[i] = Vector.Create(heap,
                     data:   m.data + i * numRows,
-                    stride: 1,
+                    stride: 1, // each column is contiguous in memory, i.e., the data layout is column-major
                     size:   numRows);
             }
 

@@ -4,50 +4,44 @@ using UnityEngine;
 using Unity.Collections.LowLevel.Unsafe;
 using System.IO;
 using System;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEditor;
 
 namespace Unity.DebugDisplay
 {
-    static class UnsafeListExtensions
+    struct DrawData
     {
-        /// <summary>
-        /// Returns a native array that aliases the content of this list.
-        /// </summary>
-        /// <returns>A native array that aliases the content of this list.</returns>
-        internal static NativeArray<T> AsNativeArray<T>(this UnsafeList<T> list)
-            where T : unmanaged
-        {
-            unsafe
-            {
-                var array = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<T>(list.Ptr, list.Length, Allocator.None);
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref array, AtomicSafetyHandle.GetTempUnsafePtrSliceHandle());
-#endif
-                return array;
-            }
-        }
-    }
-
-    internal struct Unmanaged
-    {
-        private const int kInitialBufferSize = 100000;
+        const int kInitialBufferSize = 100000;
         const int kMaxBufferSize = 10000000;
         const float kBufferGrowthFactor = 1.618f;
 
+        [NativeDisableContainerSafetyRestriction]
+        internal LineBuffer  m_LineBuffer;
+
+        [NativeDisableContainerSafetyRestriction]
+        internal TriangleBuffer m_TriangleBuffer;
+
+        [NativeDisableContainerSafetyRestriction]
+        NativeReference<bool> m_Initialized;
+
+        [NativeDisableContainerSafetyRestriction]
+        internal NativeArray<float4> m_ColorData;
+
         internal void Clear()
         {
+            if (!m_Initialized.IsCreated || !m_Initialized.Value)
+                return;
+
             // resize buffers if needed:
-            if (m_LineBuffer.ResizeRequested)
+            if (m_LineBuffer.ResizeRequired)
             {
                 var lastSize = m_LineBuffer.Size;
                 m_LineBuffer.Dispose();
                 m_LineBuffer.Initialize(math.min(kMaxBufferSize, (int)(lastSize * kBufferGrowthFactor)));
             }
 
-            if (m_TriangleBuffer.ResizeRequested)
+            if (m_TriangleBuffer.ResizeRequired)
             {
                 var lastSize = m_TriangleBuffer.Size;
                 m_TriangleBuffer.Dispose();
@@ -55,23 +49,18 @@ namespace Unity.DebugDisplay
             }
 
             // clear out all the lines and triangles:
-            m_LineBufferAllocations = m_LineBuffer.AllocateAll();
-            m_TriangleBufferAllocations = m_TriangleBuffer.AllocateAll();
+            m_LineBuffer.AllocateAll();
+            m_TriangleBuffer.AllocateAll();
         }
 
-        internal Unit m_LineBufferAllocations;
-        internal Unit m_TriangleBufferAllocations;
-
-        internal LineBuffer  m_LineBuffer;
-        internal TriangleBuffer m_TriangleBuffer;
-
-        private bool initialized;
-
-        internal NativeArray<float4> m_ColorData;
-
-        unsafe internal void Initialize()
+        internal unsafe void Initialize()
         {
-            if (initialized == false)
+            if (!m_Initialized.IsCreated)
+            {
+                m_Initialized = new NativeReference<bool>(Allocator.Persistent);
+            }
+
+            if (!m_Initialized.Value)
             {
                 var pal = stackalloc byte[ColorIndex.staticColorCount * 3]
                 {
@@ -149,32 +138,32 @@ namespace Unity.DebugDisplay
                 m_LineBuffer.Initialize(kInitialBufferSize);
                 m_TriangleBuffer.Initialize(kInitialBufferSize);
 
-                m_LineBufferAllocations = m_LineBuffer.AllocateAll();
-                m_TriangleBufferAllocations = m_TriangleBuffer.AllocateAll();
+                m_LineBuffer.AllocateAll();
+                m_TriangleBuffer.AllocateAll();
 
-                initialized = true;
+                m_Initialized.Value = true;
             }
         }
 
         internal void Dispose()
         {
-            if (initialized)
+            if (!m_Initialized.IsCreated)
+            {
+                return;
+            }
+
+            if (m_Initialized.Value)
             {
                 m_LineBuffer.Dispose();
                 m_TriangleBuffer.Dispose();
 
                 m_ColorData.Dispose();
-                initialized = false;
+                m_Initialized.Dispose();
             }
         }
-
-        private class InstanceFieldKey {}
-
-        internal static readonly SharedStatic<Unmanaged> Instance = SharedStatic<Unmanaged>.GetOrCreate<Unmanaged, InstanceFieldKey>();
     }
 
-
-    internal class Managed : IDisposable
+    class Renderer : IDisposable
     {
         internal struct Objects
         {
@@ -199,65 +188,48 @@ namespace Unity.DebugDisplay
         internal static string meshMaterialFileName = "MeshMaterial";
 #endif
 
-
-        internal unsafe Managed()
+        internal Renderer()
         {
-            Unmanaged.Instance.Data.Initialize();
+            m_DrawData = new DrawData();
+            m_DrawData.Initialize();
 
 #if UNITY_EDITOR
             resources.lineMaterial = AssetDatabase.LoadAssetAtPath<Material>(Path.Combine(debugDirName, $"{lineMaterialFileName}.mat"));
             resources.meshMaterial = AssetDatabase.LoadAssetAtPath<Material>(Path.Combine(debugDirName, $"{meshMaterialFileName}.mat"));
 
-            EditorApplication.wantsToQuit += OnEditorApplicationWantsToQuit;
 #elif ENABLE_UNITY_PHYSICS_RUNTIME_DEBUG_DISPLAY
             resources.lineMaterial = Resources.Load<Material>(lineMaterial);
             resources.meshMaterial = Resources.Load<Material>(meshMaterial);
 #endif
-            AppDomain.CurrentDomain.DomainUnload += OnDomainUnload;
         }
 
-#if UNITY_EDITOR
-        bool OnEditorApplicationWantsToQuit()
-        {
-            AppDomain.CurrentDomain.DomainUnload -= OnDomainUnload;
-            instance?.Dispose();
-            return true;
-        }
-
-#endif
-
-        static void OnDomainUnload(object sender, EventArgs e)
-        {
-            instance?.Dispose();
-        }
-
-        private void UpdateDynamicColorsData()
+        void UpdateDynamicColorsData()
         {
 #if (ENABLE_PHYSICS && UNITY_EDITOR) || ENABLE_UNITY_PHYSICS_RUNTIME_DEBUG_DISPLAY
             // Update ColorData for meshes
-            Unmanaged.Instance.Data.m_ColorData[ColorIndex.DynamicMesh.value] = new float4(
+            m_DrawData.m_ColorData[ColorIndex.DynamicMesh.value] = new float4(
                 PhysicsVisualizationSettings.rigidbodyColor.r,
                 PhysicsVisualizationSettings.rigidbodyColor.g,
                 PhysicsVisualizationSettings.rigidbodyColor.b,
                 PhysicsVisualizationSettings.rigidbodyColor.a); // Dynamic
-            Unmanaged.Instance.Data.m_ColorData[ColorIndex.StaticMesh.value] = new float4(
+            m_DrawData.m_ColorData[ColorIndex.StaticMesh.value] = new float4(
                 PhysicsVisualizationSettings.staticColor.r,
                 PhysicsVisualizationSettings.staticColor.g,
                 PhysicsVisualizationSettings.staticColor.b,
                 PhysicsVisualizationSettings.staticColor.a); // Static
-            Unmanaged.Instance.Data.m_ColorData[ColorIndex.KinematicMesh.value] = new float4(
+            m_DrawData.m_ColorData[ColorIndex.KinematicMesh.value] = new float4(
                 PhysicsVisualizationSettings.kinematicColor.r,
                 PhysicsVisualizationSettings.kinematicColor.g,
                 PhysicsVisualizationSettings.kinematicColor.b,
                 PhysicsVisualizationSettings.kinematicColor.a); // Kinematic
 #else
-            Unmanaged.Instance.Data.m_ColorData[ColorIndex.DynamicMesh.value] = Unmanaged.Instance.Data.m_ColorData[ColorIndex.BrightRed.value];
-            Unmanaged.Instance.Data.m_ColorData[ColorIndex.StaticMesh.value] = Unmanaged.Instance.Data.m_ColorData[ColorIndex.BrightBlack.value];
-            Unmanaged.Instance.Data.m_ColorData[ColorIndex.KinematicMesh.value] = Unmanaged.Instance.Data.m_ColorData[ColorIndex.BrightBlue.value];
+            m_Unmanaged.m_ColorData[ColorIndex.DynamicMesh.value] = m_Unmanaged.m_ColorData[ColorIndex.BrightRed.value];
+            m_Unmanaged.m_ColorData[ColorIndex.StaticMesh.value] = m_Unmanaged.m_ColorData[ColorIndex.BrightBlack.value];
+            m_Unmanaged.m_ColorData[ColorIndex.KinematicMesh.value] = m_Unmanaged.m_ColorData[ColorIndex.BrightBlue.value];
 #endif
         }
 
-        internal void CopyFromCpuToGpu()
+        void CopyFromCpuToGpu()
         {
 #if UNITY_EDITOR || ENABLE_UNITY_PHYSICS_RUNTIME_DEBUG_DISPLAY
             if (resources.meshMaterial == null || resources.lineMaterial == null)
@@ -271,7 +243,7 @@ namespace Unity.DebugDisplay
 
             // Color Buffer
             {
-                var updateColorBuffer = RecreateBuffer<float4>(ref m_ColorBuffer, Unmanaged.Instance.Data.m_ColorData.Length);
+                var updateColorBuffer = RecreateBuffer<float4>(ref m_ColorBuffer, m_DrawData.m_ColorData.Length);
 
                 if (updateColorBuffer || resources.meshMaterial.GetBuffer(colorBufferString).value == 0)
                     resources.meshMaterial.SetBuffer(colorBufferString, m_ColorBuffer);
@@ -281,7 +253,7 @@ namespace Unity.DebugDisplay
             UpdateDynamicColorsData();
             // Line Buffer
             {
-                var updateLineBuffer = RecreateBuffer<LineBuffer.Instance>(ref m_LineVertexBuffer, Unmanaged.Instance.Data.m_LineBuffer.m_Instance.Length);
+                var updateLineBuffer = RecreateBuffer<LineBuffer.Instance>(ref m_LineVertexBuffer, m_DrawData.m_LineBuffer.Size);
 
                 if (updateLineBuffer || resources.lineMaterial.GetBuffer(positionBufferString).value == 0)
                     resources.lineMaterial.SetBuffer(positionBufferString, m_LineVertexBuffer);
@@ -289,18 +261,18 @@ namespace Unity.DebugDisplay
 
             // Triangle Buffer
             {
-                var updateTriangleBuffer = RecreateBuffer<TriangleBuffer.Instance>(ref m_TriangleInstanceBuffer, Unmanaged.Instance.Data.m_TriangleBuffer.m_Instance.Length);
+                var updateTriangleBuffer = RecreateBuffer<TriangleBuffer.Instance>(ref m_TriangleInstanceBuffer, m_DrawData.m_TriangleBuffer.Size);
 
                 if (updateTriangleBuffer || resources.meshMaterial.GetBuffer(meshBufferString).value == 0)
                     resources.meshMaterial.SetBuffer(meshBufferString, m_TriangleInstanceBuffer);
             }
 
-            m_ColorBuffer.SetData(Unmanaged.Instance.Data.m_ColorData);
-            m_NumLinesToDraw = Unmanaged.Instance.Data.m_LineBufferAllocations.Filled;
-            m_NumTrianglesToDraw = Unmanaged.Instance.Data.m_TriangleBufferAllocations.Filled;
+            m_ColorBuffer.SetData(m_DrawData.m_ColorData);
+            m_NumLinesToDraw = m_DrawData.m_LineBuffer.Filled;
+            m_NumTrianglesToDraw = m_DrawData.m_TriangleBuffer.Filled;
 
-            m_LineVertexBuffer.SetData(Unmanaged.Instance.Data.m_LineBuffer.m_Instance.AsNativeArray(), 0, 0, m_NumLinesToDraw);
-            m_TriangleInstanceBuffer.SetData(Unmanaged.Instance.Data.m_TriangleBuffer.m_Instance.AsNativeArray(), 0, 0, m_NumTrianglesToDraw);
+            m_LineVertexBuffer.SetData(m_DrawData.m_LineBuffer.AsArray(), 0, 0, m_NumLinesToDraw);
+            m_TriangleInstanceBuffer.SetData(m_DrawData.m_TriangleBuffer.AsArray(), 0, 0, m_NumTrianglesToDraw);
 
             var scales = new float4(1.0f / FractionalCellsWide, 1.0f / FractionalCellsTall, 1.0f / PixelsWide, 1.0f / PixelsTall);
             resources.lineMaterial.SetVector(scalesString, scales);
@@ -308,7 +280,7 @@ namespace Unity.DebugDisplay
 #endif
         }
 
-        private bool RecreateBuffer<T>(ref ComputeBuffer computeBuffer, int expectedLength) where T : struct
+        bool RecreateBuffer<T>(ref ComputeBuffer computeBuffer, int expectedLength) where T : struct
         {
             bool updateBuffer = computeBuffer == null ||
                 computeBuffer.count != expectedLength;
@@ -329,7 +301,7 @@ namespace Unity.DebugDisplay
 
         internal void Clear()
         {
-            Unmanaged.Instance.Data.Clear();
+            m_DrawData.Clear();
         }
 
         internal void Render()
@@ -337,6 +309,8 @@ namespace Unity.DebugDisplay
 #if UNITY_EDITOR || ENABLE_UNITY_PHYSICS_RUNTIME_DEBUG_DISPLAY
             if (resources.meshMaterial == null || resources.lineMaterial == null)
                 return;
+
+            CopyFromCpuToGpu();
 
             resources.meshMaterial.SetPass(0);
             Graphics.DrawProceduralNow(MeshTopology.Triangles, m_NumTrianglesToDraw * 3, 1);
@@ -352,23 +326,9 @@ namespace Unity.DebugDisplay
         ComputeBuffer m_TriangleInstanceBuffer;
 
         ComputeBuffer m_ColorBuffer;
+        DrawData m_DrawData;
 
-        static Managed instance;
-        internal static Managed Instance
-        {
-            get
-            {
-                if (instance == null)
-                {
-                    instance = new Managed();
-                }
-                return instance;
-            }
-            set
-            {
-                instance = value;
-            }
-        }
+        internal DrawData DrawData => m_DrawData;
 
         public void Dispose()
         {
@@ -380,9 +340,7 @@ namespace Unity.DebugDisplay
             m_ColorBuffer = null;
             m_TriangleInstanceBuffer = null;
 
-            Unmanaged.Instance.Data.Dispose();
-            if (instance == this)
-                instance = null;
+            m_DrawData.Dispose();
         }
     }
 }

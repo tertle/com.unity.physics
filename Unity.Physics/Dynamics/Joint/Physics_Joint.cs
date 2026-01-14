@@ -44,7 +44,7 @@ namespace Unity.Physics
 
         /// <summary>
         /// <para> Deprecated. Use DefaultDampingRatio instead. </para>
-        /// <para> The default damping ratio. </para>
+        /// <para> The default damping ratio.</para>
         /// </summary>
         [Obsolete("DefaultSpringDamping has been deprecated (RemovedAfter 2023-05-09). Use DefaultDampingRatio instead. (UnityUpgradable) -> DefaultDampingRatio", false)]
         public const float DefaultSpringDamping = 2530.126f;
@@ -620,6 +620,14 @@ namespace Unity.Physics
     /// <summary>   A runtime joint instance, attached to specific rigid bodies. </summary>
     public struct Joint
     {
+        // Internal joint flags.
+        //   8765432      1
+        // [Solver Type][Enable Collision]
+        byte m_JointFlags;
+        const byte k_SolverTypeBitMask = 0b11111110;
+        const byte k_SolverTypeBitShift = 1;
+        const byte k_EnableCollisionBit = 1;
+
         /// <summary>   The body pair. </summary>
         public BodyIndexPair BodyPair;
         /// <summary>   Joint in the space of the body A. </summary>
@@ -628,8 +636,6 @@ namespace Unity.Physics
         public MTransform BFromJoint;
         /// <summary>   Constraint block. Note that Constraints needs to be 4-byte aligned for Android 32. </summary>
         public ConstraintBlock3 Constraints;
-        /// <summary>   If non-zero, allows these bodies to collide. </summary>
-        public byte EnableCollision;
         /// <summary>   The version. </summary>
         public byte Version;
 
@@ -639,5 +645,19 @@ namespace Unity.Physics
         /// but only one instance of a particular component type per entity.
         /// </summary>
         public Entity Entity;
+
+        /// <summary>   If true, allows these bodies to collide. </summary>
+        public bool EnableCollision
+        {
+            get => (m_JointFlags & k_EnableCollisionBit) != 0;
+            set => m_JointFlags = (byte)(m_JointFlags | (value ? k_EnableCollisionBit : 0));
+        }
+
+        /// <summary>   Solver type </summary>
+        public SolverType SolverType
+        {
+            get => (SolverType)((m_JointFlags & k_SolverTypeBitMask) >> k_SolverTypeBitShift);
+            set => m_JointFlags = (byte)(m_JointFlags | (((byte)value << k_SolverTypeBitShift) & k_SolverTypeBitMask));
+        }
     }
 }

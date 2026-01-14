@@ -6,7 +6,6 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Collections;
-using Unity.Physics.Aspects;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Physics.Systems;
 using Unity.Transforms;
@@ -18,7 +17,7 @@ namespace Unity.Physics
     /// collision queries such as raycasting, overlap testing, etc.
     /// </summary>
     [NoAlias]
-    public struct CollisionWorld : ICollidable, IAspectQueryable, IDisposable
+    public struct CollisionWorld : ICollidable, IDisposable
     {
         [NoAlias] private NativeArray<RigidBody> m_Bodies;    // storage for all the rigid bodies
         [NoAlias] internal Broadphase Broadphase;             // bounding volume hierarchies around subsets of the rigid bodies
@@ -459,6 +458,7 @@ namespace Unity.Physics
                     {
                         var bodyFilters = world.CollisionWorld.Broadphase.DynamicTree.BodyFilters.AsArray();
                         var respondsToCollision = world.CollisionWorld.Broadphase.DynamicTree.RespondsToCollision.AsArray();
+                        var bodySolverTypes = world.CollisionWorld.Broadphase.DynamicTree.BodySolverTypes.AsArray();
 
                         collectDynamicCoherenceInfoHandle = new CollectTemporalCoherenceInfoJob
                         {
@@ -466,6 +466,7 @@ namespace Unity.Physics
                             LocalToWorldType = componentHandles.LocalToWorldType,
                             LocalTransformType = componentHandles.LocalTransformType,
                             PhysicsColliderType = componentHandles.PhysicsColliderType,
+                            PhysicsSolverTypeType = componentHandles.PhysicsSolverTypeType,
 #if (UNITY_EDITOR || DEVELOPMENT_BUILD) && !UNITY_PHYSICS_DISABLE_INTEGRITY_CHECKS
                             PhysicsWorldIndexType = componentHandles.PhysicsWorldIndexType,
 #endif
@@ -479,8 +480,10 @@ namespace Unity.Physics
                             Nodes = world.CollisionWorld.Broadphase.DynamicTree.Nodes,
                             BodyFilters = bodyFilters,
                             RespondsToCollision = respondsToCollision,
+                            BodySolverTypes = bodySolverTypes,
                             BodyFiltersLastFrame = CreateArrayCopy(bodyFilters, worldUpdateAllocator),
                             RespondsToCollisionLastFrame = CreateArrayCopy(respondsToCollision, worldUpdateAllocator),
+                            BodySolverTypesLastFrame = CreateArrayCopy(bodySolverTypes, worldUpdateAllocator),
                             RigidBodies = world.CollisionWorld.DynamicBodies,
                             MotionVelocities = world.DynamicsWorld.MotionVelocities,
                             CollisionTolerance = world.CollisionWorld.CollisionTolerance,
@@ -524,6 +527,7 @@ namespace Unity.Physics
                     {
                         var bodyFilters = world.CollisionWorld.Broadphase.StaticTree.BodyFilters.AsArray();
                         var respondsToCollision = world.CollisionWorld.Broadphase.StaticTree.RespondsToCollision.AsArray();
+                        var bodySolverTypes = world.CollisionWorld.Broadphase.StaticTree.BodySolverTypes.AsArray();
 
                         collectStaticCoherenceInfoHandle = new CollectTemporalCoherenceInfoJob
                         {
@@ -531,6 +535,7 @@ namespace Unity.Physics
                             LocalToWorldType = componentHandles.LocalToWorldType,
                             LocalTransformType = componentHandles.LocalTransformType,
                             PhysicsColliderType = componentHandles.PhysicsColliderType,
+                            PhysicsSolverTypeType = componentHandles.PhysicsSolverTypeType,
 #if (UNITY_EDITOR || DEVELOPMENT_BUILD) && !UNITY_PHYSICS_DISABLE_INTEGRITY_CHECKS
                             PhysicsWorldIndexType = componentHandles.PhysicsWorldIndexType,
 #endif
@@ -544,8 +549,10 @@ namespace Unity.Physics
                             Nodes = world.CollisionWorld.Broadphase.StaticTree.Nodes,
                             BodyFilters = bodyFilters,
                             RespondsToCollision = respondsToCollision,
+                            BodySolverTypes = bodySolverTypes,
                             BodyFiltersLastFrame = CreateArrayCopy(bodyFilters, worldUpdateAllocator),
                             RespondsToCollisionLastFrame = CreateArrayCopy(respondsToCollision, worldUpdateAllocator),
+                            BodySolverTypesLastFrame = CreateArrayCopy(bodySolverTypes, worldUpdateAllocator),
                             RigidBodies = world.CollisionWorld.StaticBodies,
                             Static = true,
 
@@ -887,6 +894,7 @@ namespace Unity.Physics
             [ReadOnly] public ComponentTypeHandle<LocalToWorld> LocalToWorldType;
             [ReadOnly] public ComponentTypeHandle<LocalTransform> LocalTransformType;
             [ReadOnly] public ComponentTypeHandle<PhysicsCollider> PhysicsColliderType;
+            [ReadOnly] public ComponentTypeHandle<PhysicsSolverType> PhysicsSolverTypeType;
 
 #if (UNITY_EDITOR || DEVELOPMENT_BUILD) && !UNITY_PHYSICS_DISABLE_INTEGRITY_CHECKS
             [ReadOnly] public SharedComponentTypeHandle<PhysicsWorldIndex> PhysicsWorldIndexType;
@@ -908,6 +916,8 @@ namespace Unity.Physics
             public NativeArray<CollisionFilter> BodyFilters;
             [NativeDisableContainerSafetyRestriction]
             public NativeArray<bool> RespondsToCollision;
+            [NativeDisableContainerSafetyRestriction]
+            public NativeArray<SolverType> BodySolverTypes;
 
             [ReadOnly]
             [NativeDisableContainerSafetyRestriction]
@@ -915,6 +925,9 @@ namespace Unity.Physics
             [ReadOnly]
             [NativeDisableContainerSafetyRestriction]
             public NativeArray<bool> RespondsToCollisionLastFrame;
+            [ReadOnly]
+            [NativeDisableContainerSafetyRestriction]
+            public NativeArray<SolverType> BodySolverTypesLastFrame;
 
             [ReadOnly] public NativeArray<RigidBody> RigidBodies;
             [NativeDisableContainerSafetyRestriction]
@@ -954,6 +967,7 @@ namespace Unity.Physics
                     chunk.DidChange(ref LocalToWorldType, LastSystemVersion) ||
                     chunk.DidChange(ref LocalTransformType, LastSystemVersion);
                 var colliderChangedInChunk = chunk.DidChange(ref PhysicsColliderType, LastSystemVersion);
+                var solverTypeChangedInChunk = chunk.DidChange(ref PhysicsSolverTypeType, LastSystemVersion);
                 var temporalCoherenceDataChanged = chunk.DidChange(ref PhysicsTemporalCoherenceInfoTypeRW, LastSystemVersion);
                 var chunkOrderChanged = chunk.DidOrderChange(LastSystemVersion);
 
@@ -970,7 +984,7 @@ namespace Unity.Physics
                         chunk.GetComponentDataPtrRW(ref PhysicsTemporalCoherenceInfoTypeRW);
 
                     // early out in case nothing of relevance for incremental broadphase changed in this chunk
-                    if (!(transformChangedInChunk || colliderChangedInChunk || temporalCoherenceDataChanged || chunkOrderChanged))
+                    if (!(transformChangedInChunk || colliderChangedInChunk || solverTypeChangedInChunk || temporalCoherenceDataChanged || chunkOrderChanged))
                     {
                         var entityIter = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
 
@@ -993,7 +1007,7 @@ namespace Unity.Physics
                             // Nothing changed in this chunk, but the starting entity index changed.
                             // So we have to update internal broadphase data structures:
                             // 1. update data in BVH node and coherence info
-                            // 2. shift data in RespondsToCollision and CollisionFilter arrays using memcpy from the last frame's data.
+                            // 2. shift data in RespondsToCollision, CollisionFilter and BodySolverTypes arrays using memcpy from the last frame's data.
 
                             do
                             {
@@ -1043,6 +1057,11 @@ namespace Unity.Physics
                                 (bool*)RespondsToCollision.GetUnsafePtr() + firstBodyIndex,
                                 (bool*)RespondsToCollisionLastFrame.GetUnsafePtr() + firstBodyIndexLastFrame,
                                 sizeof(bool) * chunk.Count);
+
+                            UnsafeUtility.MemCpy(
+                                (SolverType*)BodySolverTypes.GetUnsafePtr() + firstBodyIndex,
+                                (SolverType*)BodySolverTypesLastFrame.GetUnsafePtr() + firstBodyIndexLastFrame,
+                                sizeof(SolverType) * chunk.Count);
                         }
 
                         return;
@@ -1142,6 +1161,13 @@ namespace Unity.Physics
                                     collisionFilterChanged = !previousFilter.Equals(collisionFilter);
                                     BodyFilters[bodyIndex] = collisionFilter;
                                     RespondsToCollision[bodyIndex] = respondsToCollision;
+                                }
+
+                                // check if we need to update the solver type
+                                var needSolverTypeUpdate = bodyIndexChanged || solverTypeChangedInChunk;
+                                if (needSolverTypeUpdate)
+                                {
+                                    BodySolverTypes[bodyIndex] = body.SolverType;
                                 }
 
                                 // check if we need to update the AABB in the broadphase
@@ -1280,6 +1306,7 @@ namespace Unity.Physics
 
                                 BodyFilters[bodyIndex] = collisionFilter;
                                 RespondsToCollision[bodyIndex] = respondsToCollision;
+                                BodySolverTypes[bodyIndex] = body.SolverType;
 
                                 InsertBodyDataWriter.Write(new Broadphase.InsertionData
                                 {
@@ -1541,117 +1568,7 @@ namespace Unity.Physics
             input.InitScale();
             return Broadphase.CalculateDistance(input, m_Bodies, ref collector);
         }
-
-        #region Aspect query impl
-        #pragma warning disable CS0618 // Disable Aspects obsolete warnings
-
-        /// <summary>   Cast a collider aspect against this <see cref="CollisionWorld"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CastCollider(in this, colliderAspect, direction, maxDistance, queryInteraction);
-
-        /// <summary>   Cast a collider aspect against this <see cref="CollisionWorld"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="closestHit">       [out] The closest hit. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, out ColliderCastHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CastCollider(in this, colliderAspect, direction, maxDistance, out closestHit, queryInteraction);
-
-        /// <summary>   Cast a collider aspect against this <see cref="CollisionWorld"/>. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="allHits">          [in,out] all hits. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider(in ColliderAspect colliderAspect, float3 direction, float maxDistance, ref NativeList<ColliderCastHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CastCollider(in this, colliderAspect, direction, maxDistance, ref allHits, queryInteraction);
-
-        /// <summary>   Cast a collider aspect against this <see cref="CollisionWorld"/>. </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="direction">        The direction of the aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="collector">        [in,out] The collector. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CastCollider<T>(in ColliderAspect colliderAspect, float3 direction, float maxDistance, ref T collector, QueryInteraction queryInteraction = QueryInteraction.Default) where T : struct, ICollector<ColliderCastHit>
-        {
-            QueryInteractionCollector<ColliderCastHit, T> interactionCollector = new QueryInteractionCollector<ColliderCastHit, T>(ref collector, queryInteraction == QueryInteraction.Default, colliderAspect.Entity);
-
-            ColliderCastInput input = new ColliderCastInput(colliderAspect.m_Collider.ValueRO.Value, colliderAspect.Position,
-                colliderAspect.Position + direction * maxDistance, colliderAspect.Rotation, colliderAspect.Scale);
-            return CastCollider(input, ref interactionCollector);
-        }
-
-        /// <summary>   Calculates the distance from the collider aspect. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CalculateDistance(in this, colliderAspect, maxDistance, queryInteraction);
-
-        /// <summary>   Calculates the distance from the collider aspect. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="closestHit">       [out] The closest hit. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, out DistanceHit closestHit, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CalculateDistance(in this, colliderAspect, maxDistance, out closestHit, queryInteraction);
-
-        /// <summary>   Calculates the distance from the collider aspect. </summary>
-        ///
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="allHits">          [in,out] all hits. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance(in ColliderAspect colliderAspect, float maxDistance, ref NativeList<DistanceHit> allHits, QueryInteraction queryInteraction = QueryInteraction.Default)
-            => QueryWrappers.CalculateDistance(in this, colliderAspect, maxDistance, ref allHits, queryInteraction);
-
-        /// <summary>   Calculates the distance from the collider aspect. </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="colliderAspect">   The collider aspect. </param>
-        /// <param name="maxDistance">      The maximum distance. </param>
-        /// <param name="collector">        [in,out] The collector. </param>
-        /// <param name="queryInteraction"> (Optional) The query interaction. </param>
-        ///
-        /// <returns>   True if there is a hit, false otherwise. </returns>
-        public bool CalculateDistance<T>(in ColliderAspect colliderAspect, float maxDistance, ref T collector, QueryInteraction queryInteraction = QueryInteraction.Default) where T : struct, ICollector<DistanceHit>
-        {
-            QueryInteractionCollector<DistanceHit, T> interactionCollector = new QueryInteractionCollector<DistanceHit, T>(ref collector, queryInteraction == QueryInteraction.IgnoreTriggers, colliderAspect.Entity);
-
-            ColliderDistanceInput input = new ColliderDistanceInput(colliderAspect.m_Collider.ValueRO.Value, maxDistance,
-                new RigidTransform(colliderAspect.Rotation, colliderAspect.Position), colliderAspect.Scale);
-            return CalculateDistance(input, ref interactionCollector);
-        }
-
-        #pragma warning restore CS0618
-        #endregion
-
+        
         #region GO API Queries
 
         /// <summary>   Interfaces that represent queries that exist in the GameObjects world. </summary>

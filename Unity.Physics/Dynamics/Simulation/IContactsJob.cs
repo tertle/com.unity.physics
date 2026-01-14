@@ -28,7 +28,6 @@ namespace Unity.Physics
         void Execute(ref ModifiableContactHeader header, ref ModifiableContactPoint contact);
     }
 
-#if !HAVOK_PHYSICS_EXISTS
 
     /// <summary>
     /// Interface for jobs that iterate through the list of contact manifolds produced by the narrow
@@ -38,7 +37,6 @@ namespace Unity.Physics
     {
     }
 
-#endif
 
     /// <summary>   A modifiable contact header. </summary>
     public struct ModifiableContactHeader
@@ -195,8 +193,6 @@ namespace Unity.Physics
     /// <summary>   The contacts job extensions. </summary>
     public static class IContactsJobExtensions
     {
-#if !HAVOK_PHYSICS_EXISTS
-
         /// <summary>   Default Schedule() implementation for IContactsJob. </summary>
         ///
         /// <typeparam name="T">    Generic type parameter. </typeparam>
@@ -218,50 +214,18 @@ namespace Unity.Physics
             return ScheduleUnityPhysicsContactsJob(jobData, simulationSingleton.AsSimulation(), ref world, inputDeps);
         }
 
-#else
-
-        /// <summary>
-        /// In this case Schedule() implementation for IContactsJob is provided by the Havok.Physics
-        /// assembly.
-        ///  This is a stub to catch when that assembly is missing.
-        /// <todo.eoin.modifier Put in a link to documentation for this:
-        /// </summary>
-        ///
-        /// <typeparam name="T">    Generic type parameter. </typeparam>
-        /// <param name="jobData">              The jobData to act on. </param>
-        /// <param name="simulationSingleton">  The simulation singleton. </param>
-        /// <param name="world">                [in,out] The world. </param>
-        /// <param name="inputDeps">            The input deps. </param>
-        /// <param name="_causeCompileError">   (Optional) The cause compile error. </param>
-        ///
-        /// <returns>   A JobHandle. </returns>
-        [Obsolete("This error occurs when HAVOK_PHYSICS_EXISTS is defined but Havok.Physics is missing from your package's asmdef references. (DoNotRemove)", true)]
-        public static unsafe JobHandle Schedule<T>(this T jobData, SimulationSingleton simulationSingleton, ref PhysicsWorld world, JobHandle inputDeps,
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF _causeCompileError = HAVOK_PHYSICS_MISSING_FROM_ASMDEF.HAVOK_PHYSICS_MISSING_FROM_ASMDEF)
-            where T : struct, IContactsJobBase
-        {
-            return new JobHandle();
-        }
-
-        /// <summary>   Values that represent havok physics missing from asmdefs. </summary>
-        public enum HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        {
-            HAVOK_PHYSICS_MISSING_FROM_ASMDEF
-        }
-#endif
 
         internal static unsafe JobHandle ScheduleUnityPhysicsContactsJob<T>(this T jobData, Simulation simulation, ref PhysicsWorld world, JobHandle inputDeps)
             where T : struct, IContactsJobBase
         {
             SafetyChecks.CheckSimulationStageAndThrow(simulation.m_SimulationScheduleStage, SimulationScheduleStage.PostCreateContacts);
 
-            if (simulation.StepContext.Contacts.IsCreated && simulation.StepContext.SolverSchedulerInfo.NumWorkItems.IsCreated)
+            if (simulation.StepContext.Contacts.IsCreated)
             {
                 var data = new ContactsJobData<T>
                 {
                     UserJobData = jobData,
                     ContactReader = simulation.StepContext.Contacts.AsReader(),
-                    NumWorkItems = simulation.StepContext.SolverSchedulerInfo.NumWorkItems,
                     Bodies = world.Bodies
                 };
 
@@ -280,7 +244,6 @@ namespace Unity.Physics
             public T UserJobData;
 
             [NativeDisableContainerSafetyRestriction] public NativeStream.Reader ContactReader;
-            [ReadOnly] public NativeArray<int> NumWorkItems;
             // Disable aliasing restriction in case T has a NativeArray of PhysicsWorld.Bodies
             [ReadOnly, NativeDisableContainerSafetyRestriction] public NativeArray<RigidBody> Bodies;
         }
@@ -302,7 +265,7 @@ namespace Unity.Physics
             public unsafe static void Execute(ref ContactsJobData<T> jobData, IntPtr additionalData,
                 IntPtr bufferRangePatchData, ref JobRanges ranges, int jobIndex)
             {
-                var iterator = new ContactsJobIterator(jobData.ContactReader, jobData.NumWorkItems[0]);
+                var iterator = new ContactsJobIterator(jobData.ContactReader);
 
                 while (iterator.HasItemsLeft())
                 {
@@ -356,21 +319,19 @@ namespace Unity.Physics
         }
 
         // Utility to help iterate over all the items in the contacts job stream
-        private unsafe struct ContactsJobIterator
+        unsafe struct ContactsJobIterator
         {
             [NativeDisableContainerSafetyRestriction] NativeStream.Reader m_ContactReader;
             [NativeDisableUnsafePtrRestriction] public ContactHeader* m_LastHeader;
             [NativeDisableUnsafePtrRestriction] public ContactPoint* m_LastContact;
             int m_NumPointsLeft;
-            int m_CurrentWorkItem;
-            readonly int m_MaxNumWorkItems;
+            int m_CurrentForEachIndex;
 
-            public unsafe ContactsJobIterator(NativeStream.Reader reader, int numWorkItems)
+            public ContactsJobIterator(NativeStream.Reader reader)
             {
                 m_ContactReader = reader;
-                m_MaxNumWorkItems = numWorkItems;
 
-                m_CurrentWorkItem = 0;
+                m_CurrentForEachIndex = 0;
                 m_NumPointsLeft = 0;
                 m_LastHeader = null;
                 m_LastContact = null;
@@ -382,7 +343,7 @@ namespace Unity.Physics
                 return m_ContactReader.RemainingItemCount > 0;
             }
 
-            public unsafe int CurrentPointIndex => m_LastHeader->NumContacts - m_NumPointsLeft - 1;
+            public int CurrentPointIndex => m_LastHeader->NumContacts - m_NumPointsLeft - 1;
 
             public void Next()
             {
@@ -404,10 +365,9 @@ namespace Unity.Physics
 
             void AdvanceForEachIndex()
             {
-                while (m_ContactReader.RemainingItemCount == 0 && m_CurrentWorkItem < m_MaxNumWorkItems)
+                while (m_ContactReader.RemainingItemCount == 0 && m_CurrentForEachIndex < m_ContactReader.ForEachCount)
                 {
-                    m_ContactReader.BeginForEachIndex(m_CurrentWorkItem);
-                    m_CurrentWorkItem++;
+                    m_ContactReader.BeginForEachIndex(m_CurrentForEachIndex++);
                 }
             }
         }

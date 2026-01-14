@@ -1,6 +1,6 @@
+using System.Runtime.CompilerServices;
 using Unity.Burst;
 using Unity.Collections;
-using Unity.Entities;
 using Unity.Mathematics;
 using static Unity.Physics.Math;
 
@@ -11,7 +11,6 @@ namespace Unity.Physics
     struct AngularLimit1DJacobian
     {
         // Limited axis in motion A space
-        // TODO could calculate this from AxisIndex and MotionAFromJoint
         public float3 AxisInMotionA;
 
         // Index of the limited axis
@@ -20,6 +19,9 @@ namespace Unity.Physics
         // Relative angle limits
         public float MinAngle;
         public float MaxAngle;
+
+        // Motion A orientation in world space
+        public quaternion WorldFromMotionA;
 
         // Relative orientation of the motions before solving
         public quaternion MotionBFromA;
@@ -62,6 +64,8 @@ namespace Unity.Physics
         {
             MotionBFromA = math.mul(math.inverse(motionB.WorldFromMotion.rot), motionA.WorldFromMotion.rot);
 
+            WorldFromMotionA = motionA.WorldFromMotion.rot;
+
             // Calculate the current error
             InitialError = CalculateError(MotionBFromA);
         }
@@ -85,19 +89,19 @@ namespace Unity.Physics
             // Calculate the error, adjust by tau and damping, and apply an impulse to correct it
             float futureError = CalculateError(futureMotionBFromA);
             float solveError = JacobianUtilities.CalculateCorrection(futureError, InitialError, Tau, Damping);
-            float impulse = math.mul(effectiveMass, -solveError) * stepInput.InvTimestep;
+            float impulse = math.mul(effectiveMass, -solveError) * Solver.CalculateInvTimestep(stepInput.Timestep);
             velocityA.ApplyAngularImpulse(impulse * AxisInMotionA);
             velocityB.ApplyAngularImpulse(impulse * axisInMotionB);
 
             if ((jacHeader.Flags & JacobianFlags.EnableImpulseEvents) != 0)
             {
-                HandleImpulseEvent(ref jacHeader, impulse, stepInput.IsLastSubstepAndLastSolverIteration,
+                HandleImpulseEvent(ref jacHeader, impulse, stepInput.ExportEventsInThisIteration,
                     ref impulseEventsWriter);
             }
         }
 
-        // Helper function
-        private float CalculateError(quaternion motionBFromA)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float CalculateAngle(quaternion motionBFromA)
         {
             // Calculate the relative joint frame rotation
             quaternion jointBFromA = math.mul(math.mul(math.inverse(MotionBFromJoint), motionBFromA), MotionAFromJoint);
@@ -124,16 +128,28 @@ namespace Unity.Physics
             angle = math.select(angle, angle - 2.0f * (float)math.PI, above);
             angle = math.select(angle, angle + 2.0f * (float)math.PI, below);
 
-            // Calculate the relative angle about the twist axis
-            return JacobianUtilities.CalculateError(angle, MinAngle, MaxAngle);
+            return angle;
         }
 
-        private void HandleImpulseEvent(ref JacobianHeader jacHeader, float impulse, bool isLastIteration, ref NativeStream.Writer impulseEventsWriter)
+        // Helper function
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private float CalculateError(quaternion motionBFromA)
+        {
+            // Calculate the current angle
+            var angle = CalculateAngle(motionBFromA);
+            // Calculate the error from the limits
+            var error = JacobianUtilities.CalculateError(angle, MinAngle, MaxAngle);
+            //UnityEngine.Debug.Log($"AngularLimit1DJacobian.CalculateError: angle = {angle}, error = {error}");
+            return error;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void HandleImpulseEvent(ref JacobianHeader jacHeader, float impulse, bool exportEvent, ref NativeStream.Writer impulseEventsWriter)
         {
             ref ImpulseEventSolverData impulseEventData = ref jacHeader.AccessImpulseEventSolverData();
             impulseEventData.AccumulatedImpulse[AxisIndex] += impulse;
 
-            if (isLastIteration && math.any(math.abs(impulseEventData.AccumulatedImpulse) > impulseEventData.MaxImpulse))
+            if (exportEvent && math.any(math.abs(impulseEventData.AccumulatedImpulse) > impulseEventData.MaxImpulse))
             {
                 impulseEventsWriter.Write(new ImpulseEventData
                 {

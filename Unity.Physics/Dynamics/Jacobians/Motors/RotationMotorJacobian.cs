@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Unity.Burst;
 using Unity.Mathematics;
 using UnityEngine;
@@ -18,6 +19,9 @@ namespace Unity.Physics
 
         // Index of the limited axis
         public int AxisIndex;
+
+        // Motion A orientation in world space
+        public quaternion WorldFromMotionA;
 
         // Relative orientation of the motions before solving
         public quaternion MotionBFromA;
@@ -67,6 +71,8 @@ namespace Unity.Physics
         {
             MotionBFromA = math.mul(math.inverse(motionB.WorldFromMotion.rot), motionA.WorldFromMotion.rot);
 
+            WorldFromMotionA = motionA.WorldFromMotion.rot;
+
             // Calculate the current error
             InitialError = CalculateError(MotionBFromA, out float tmp);
         }
@@ -92,7 +98,8 @@ namespace Unity.Physics
             float futureError = CalculateError(futureMotionBFromA, out float currentAngle);
             float correction = JacobianUtilities.CalculateCorrection(futureError, InitialError, Tau, Damping);
 
-            float impulse = math.mul(effectiveMass, -correction) * stepInput.InvTimestep;
+            var invTimestep = Solver.CalculateInvTimestep(stepInput.Timestep);
+            float impulse = math.mul(effectiveMass, -correction) * invTimestep;
             impulse = JacobianUtilities.CapImpulse(impulse, ref AccumulatedImpulse, MaxImpulseOfMotor);
 
             // check if we hit a limit
@@ -100,7 +107,7 @@ namespace Unity.Physics
             var limitError = JacobianUtilities.CalculateError(correctedAngle, MinAngle, MaxAngle);
             if (math.abs(limitError) > 0)
             {
-                impulse += math.mul(effectiveMass, -limitError) * stepInput.InvTimestep;
+                impulse += math.mul(effectiveMass, -limitError) * invTimestep;
             }
 
             velocityA.ApplyAngularImpulse(impulse * AxisInMotionA);
@@ -108,7 +115,8 @@ namespace Unity.Physics
         }
 
         // Helper function
-        private float CalculateError(quaternion motionBFromA, out float currentAngle)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float CalculateError(quaternion motionBFromA, out float currentAngle)
         {
             // Calculate the relative joint frame rotation
             quaternion jointBFromA = math.mul(math.mul(math.inverse(MotionBFromJoint), motionBFromA), MotionAFromJoint);

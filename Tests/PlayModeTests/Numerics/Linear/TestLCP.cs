@@ -17,7 +17,6 @@ namespace Unity.Numerics.Linear.Tests
         [GenerateTestsForBurstCompatibility]
         struct LCPSolveJob : IJob
         {
-            public MemoryManager heap;
             [ReadOnly] public Matrix M;
             [ReadOnly] public Vector q;
             public Vector z;
@@ -35,7 +34,6 @@ namespace Unity.Numerics.Linear.Tests
         [GenerateTestsForBurstCompatibility]
         struct MLCPSolveJob : IJob
         {
-            public MemoryManager heap;
             [ReadOnly] public Matrix M;
             [ReadOnly] public Vector q;
             [ReadOnly] public Vector l;
@@ -43,11 +41,16 @@ namespace Unity.Numerics.Linear.Tests
             public Vector z;
             public Vector w;
             public NativeArray<LCP.MLCPIndexFlag> indexSetArray;
+            public bool coupled;
+            public bool useCholeskyFactorization;
             public NativeReference<bool> success;
 
             public void Execute()
             {
-                success.Value = LCP.SolveMLCP(M, q, l, u, ref indexSetArray, ref w, ref z);
+                var couplingData = new NativeList<LCP.CouplingData>(1, Allocator.Temp);
+                float kEps = 1e-6f;
+                success.Value = coupled ? LCP.SolveCoupledMLCP(M, q, ref l, ref u, ref indexSetArray, ref couplingData, ref w, ref z, useCholeskyFactorization) < kEps
+                    : LCP.SolveMLCP(M, q, l, u, ref indexSetArray, ref w, ref z, useCholeskyFactorization);
             }
         }
 
@@ -64,10 +67,8 @@ namespace Unity.Numerics.Linear.Tests
             Mixed
         }
 
-        [TestCase(IndexSetMode.Free)]
-        [TestCase(IndexSetMode.Tight)]
-        [TestCase(IndexSetMode.Mixed)]
-        public void LCP_Job_10x10(IndexSetMode initialIndexSetMode)
+        [Test]
+        public void LCP_Job_10x10([Values] IndexSetMode initialIndexSetMode)
         {
             /*
                 Solve the following LCP:
@@ -83,7 +84,7 @@ namespace Unity.Numerics.Linear.Tests
                 The above behavior is achieved by setting M to identity.
             */
 
-            using (var heap = MemoryManager.Create(16384, Allocator.Temp))
+            using (var heap = MemoryManager.Create(16384, Allocator.Persistent))
             {
                 var M = Matrix.Create(heap, 10, 10);
                 M.Clear();
@@ -158,7 +159,6 @@ namespace Unity.Numerics.Linear.Tests
                 {
                     var lcpJob = new LCPSolveJob()
                     {
-                        heap = heap,
                         M = M,
                         q = q,
                         z = z,
@@ -267,10 +267,8 @@ namespace Unity.Numerics.Linear.Tests
             GreaterZero = 0x10,
         }
 
-        [TestCase(IndexSetMode.Free)]
-        [TestCase(IndexSetMode.Tight)]
-        [TestCase(IndexSetMode.Mixed)]
-        public void MLCP_Job_10x10(IndexSetMode initialIndexSetMode)
+        [Test]
+        public void MLCP_Job_10x10([Values] IndexSetMode initialIndexSetMode, [Values] bool coupled, [Values] bool useCholeskyFactorization)
         {
             /*
                 Solve the following MLCP:
@@ -301,7 +299,7 @@ namespace Unity.Numerics.Linear.Tests
                 enforce a z value of -3 or +3 respectively.
             */
 
-            using (var heap = MemoryManager.Create(16384, Allocator.Temp))
+            using (var heap = MemoryManager.Create(16384, Allocator.Persistent))
             {
                 var M = Matrix.Create(heap, 10, 10);
                 M.Clear();
@@ -397,9 +395,8 @@ namespace Unity.Numerics.Linear.Tests
                 var success = new NativeReference<bool>(false, Allocator.TempJob);
                 try
                 {
-                    var lcpJob = new MLCPSolveJob()
+                    var lcpJob = new MLCPSolveJob
                     {
-                        heap = heap,
                         M = M,
                         q = q,
                         l = l,
@@ -407,6 +404,8 @@ namespace Unity.Numerics.Linear.Tests
                         z = z,
                         w = w,
                         indexSetArray = indexSetArray,
+                        coupled = coupled,
+                        useCholeskyFactorization = useCholeskyFactorization,
                         success = success
                     };
                     lcpJob.Run();

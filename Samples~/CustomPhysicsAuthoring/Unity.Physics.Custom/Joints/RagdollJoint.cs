@@ -102,6 +102,7 @@ namespace Unity.Physics.Authoring
             uint worldIndex = GetWorldIndexFromBaseJoint(authoring);
             CreateJointEntities(worldIndex,
                 constraintBodyPair,
+                authoring.SolverType,
                 new NativeArray<PhysicsJoint>(2, Allocator.Temp) { [0] = primaryCone, [1] = perpendicularCone }, entities);
         }
     }
